@@ -39,6 +39,7 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
   late final Animation<double> _spinCurve;
 
   bool _menuOpen = false;
+  bool _hoverSpun = false;
   Offset _menuPos = const Offset(8, 8);
 
   PetController get c => widget.controller;
@@ -286,8 +287,15 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
           child: RepaintBoundary(
             child: MouseRegion(
               onEnter: (_) {
-                if (!_spin.isAnimating) _spin.forward(from: 0);
+                if (_hoverSpun ||
+                    _spin.isAnimating ||
+                    c.state == PetState.sleep) {
+                  return;
+                }
+                _hoverSpun = true;
+                _spin.forward(from: 0);
               },
+              onExit: (_) => _hoverSpun = false,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: c.interact,
