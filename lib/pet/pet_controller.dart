@@ -25,6 +25,7 @@ class PetController extends ChangeNotifier {
   Timer? _bubbleTimer;
   Timer? _sleepTimer;
   Timer? _tipTimer;
+  Timer? _growthCardTimer;
   DateTime _lastInteraction = DateTime.now();
 
   PetController({
@@ -133,6 +134,13 @@ class PetController extends ChangeNotifier {
 
   void toggleGrowthCard() {
     showGrowthCard = !showGrowthCard;
+    _growthCardTimer?.cancel();
+    if (showGrowthCard) {
+      _growthCardTimer = Timer(const Duration(seconds: 30), () {
+        showGrowthCard = false;
+        notifyListeners();
+      });
+    }
     notifyListeners();
   }
 
@@ -157,6 +165,7 @@ class PetController extends ChangeNotifier {
     _bubbleTimer?.cancel();
     _sleepTimer?.cancel();
     _tipTimer?.cancel();
+    _growthCardTimer?.cancel();
     super.dispose();
   }
 }
