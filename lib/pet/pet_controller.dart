@@ -136,7 +136,7 @@ class PetController extends ChangeNotifier {
     showGrowthCard = !showGrowthCard;
     _growthCardTimer?.cancel();
     if (showGrowthCard) {
-      _growthCardTimer = Timer(const Duration(seconds: 30), () {
+      _growthCardTimer = Timer(const Duration(seconds: 15), () {
         showGrowthCard = false;
         notifyListeners();
       });
