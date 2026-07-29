@@ -35,6 +35,8 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
   late final AnimationController _bounce;
   late final AnimationController _blink;
   late final AnimationController _menu;
+  late final AnimationController _spin;
+  late final Animation<double> _spinCurve;
 
   bool _menuOpen = false;
   Offset _menuPos = const Offset(8, 8);
@@ -55,6 +57,10 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
         vsync: this, duration: const Duration(milliseconds: 280));
     _menu = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 220));
+    _spin = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 2000));
+    _spinCurve =
+        CurvedAnimation(parent: _spin, curve: Curves.easeInOutCubic);
     c.addListener(_onState);
   }
 
@@ -89,6 +95,7 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
     _bounce.dispose();
     _blink.dispose();
     _menu.dispose();
+    _spin.dispose();
     super.dispose();
   }
 
@@ -277,39 +284,58 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
         Positioned(
           bottom: 8,
           child: RepaintBoundary(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: c.interact,
-              onDoubleTap: c.toggleGrowthCard,
-              onPanStart: (_) => windowManager.startDragging(),
-              onSecondaryTapUp: (d) => _openMenu(d.localPosition),
-              child: AnimatedBuilder(
-                animation: Listenable.merge([_breathCurve, _bounce, _blink]),
-                child: ListenableBuilder(
-                  listenable: c,
-                  builder: (context, _) => _PetVisual(
-                      animal: animal,
-                      skin: c.config.skinOf(animal.id),
-                      sleeping: c.state == PetState.sleep,
-                      scale: c.petScale),
+            child: MouseRegion(
+              onEnter: (_) {
+                if (!_spin.isAnimating) _spin.forward(from: 0);
+              },
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: c.interact,
+                onDoubleTap: c.toggleGrowthCard,
+                onPanStart: (_) => windowManager.startDragging(),
+                onSecondaryTapUp: (d) => _openMenu(d.localPosition),
+                child: AnimatedBuilder(
+                  animation: Listenable.merge(
+                      [_breathCurve, _bounce, _blink, _spinCurve]),
+                  child: ListenableBuilder(
+                    listenable: c,
+                    builder: (context, _) => _PetVisual(
+                        animal: animal,
+                        skin: c.config.skinOf(animal.id),
+                        sleeping: c.state == PetState.sleep,
+                        scale: c.petScale),
+                  ),
+                  builder: (context, child) {
+                    final breathScale = 1.0 + _breathCurve.value * 0.035;
+                    final jump = math.sin(math.pi * _bounce.value);
+                    final bounceY = -26 * jump;
+                    final blinkAmount = math.sin(math.pi * _blink.value);
+                    final squishY = 1.0 - 0.12 * blinkAmount;
+                    final squishX = 1.0 + 0.06 * blinkAmount;
+                    final stretch = 1.0 + 0.05 * jump;
+                    final spinAngle = _spinCurve.value * 2 * math.pi * 2;
+                    final st = _spinCurve.value;
+                    final spinShrink = st < 0.35
+                        ? 1.0 - 0.9 * (st / 0.35)
+                        : 0.1 +
+                            0.9 *
+                                Curves.easeInOut
+                                    .transform((st - 0.35) / 0.65);
+                    return Transform.translate(
+                      offset: Offset(0, bounceY),
+                      child: Transform.rotate(
+                        angle: spinAngle,
+                        child: Transform.scale(
+                          scaleY: breathScale * squishY * stretch * spinShrink,
+                          scaleX: squishX *
+                              (2 - stretch).clamp(0.9, 1.1) *
+                              spinShrink,
+                          child: child,
+                        ),
+                      ),
+                    );
+                  },
                 ),
-                builder: (context, child) {
-                  final breathScale = 1.0 + _breathCurve.value * 0.035;
-                  final jump = math.sin(math.pi * _bounce.value);
-                  final bounceY = -26 * jump;
-                  final blinkAmount = math.sin(math.pi * _blink.value);
-                  final squishY = 1.0 - 0.12 * blinkAmount;
-                  final squishX = 1.0 + 0.06 * blinkAmount;
-                  final stretch = 1.0 + 0.05 * jump;
-                  return Transform.translate(
-                    offset: Offset(0, bounceY),
-                    child: Transform.scale(
-                      scaleY: breathScale * squishY * stretch,
-                      scaleX: squishX * (2 - stretch).clamp(0.9, 1.1),
-                      child: child,
-                    ),
-                  );
-                },
               ),
             ),
           ),
