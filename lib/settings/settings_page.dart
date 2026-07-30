@@ -7,6 +7,7 @@ import '../ai/ai_client.dart';
 import '../core/animals.dart';
 import '../core/config.dart';
 import '../core/fa_icons.dart';
+import '../growth/growth_service.dart';
 import '../skin/skin_service.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -31,6 +32,10 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _testing = false;
   bool _skinBusy = false;
 
+  List<GrowthSnapshot> _growthList = [];
+  bool _growthDesc = true;
+  String? _selectedGrowthId;
+
   AppConfig get cfg => widget.config;
 
   @override
@@ -43,6 +48,9 @@ class _SettingsPageState extends State<SettingsPage> {
     _interval = TextEditingController(text: '${cfg.ai.tipIntervalMinutes}');
     _aiEnabled = cfg.ai.enabled;
     _scale = cfg.petScale;
+    _growthList = GrowthSnapshot.loadAll();
+    _sortGrowth();
+    if (_growthList.isNotEmpty) _selectedGrowthId = _growthList.first.animalId;
   }
 
   @override
@@ -132,6 +140,163 @@ class _SettingsPageState extends State<SettingsPage> {
     cfg.save();
     setState(() => _status = '已恢复默认形象');
   }
+
+  void _sortGrowth() {
+    _growthList.sort((a, b) => _growthDesc
+        ? b.totalOnlineMinutes.compareTo(a.totalOnlineMinutes)
+        : a.totalOnlineMinutes.compareTo(b.totalOnlineMinutes));
+  }
+
+  String _moodEmoji(int mood) {
+    if (mood >= 80) return '😊';
+    if (mood >= 50) return '🙂';
+    return '😔';
+  }
+
+  Widget _buildGrowthSection() {
+    if (_growthList.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        alignment: Alignment.center,
+        child: const Text('暂无成长记录',
+            style: TextStyle(fontSize: 12, color: Colors.black38)),
+      );
+    }
+
+    final selected = _growthList.firstWhere(
+      (g) => g.animalId == _selectedGrowthId,
+      orElse: () => _growthList.first,
+    );
+    final animal = animalById(selected.animalId);
+    final color = animal.themeColor;
+    final days = DateTime.now().difference(selected.createdAt).inDays + 1;
+    final hours = selected.totalOnlineMinutes ~/ 60;
+    final mins = selected.totalOnlineMinutes % 60;
+    final progress = (selected.exp / selected.expToNext).clamp(0.0, 1.0);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _dropdown<String>(
+          value: selected.animalId,
+          items: _growthList.map((g) {
+            final a = animalById(g.animalId);
+            final h = g.totalOnlineMinutes ~/ 60;
+            final m = g.totalOnlineMinutes % 60;
+            return DropdownMenuItem(
+              value: g.animalId,
+              child: Row(
+                children: [
+                  _animalAvatar(a.id, a.emoji),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text('${a.name} · $h小时$m分',
+                        style: const TextStyle(fontSize: 13)),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+          onChanged: (v) => setState(() => _selectedGrowthId = v),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(animal.emoji, style: const TextStyle(fontSize: 18)),
+                  const SizedBox(width: 6),
+                  Text(animal.name,
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: Color.alphaBlend(
+                              Colors.black.withValues(alpha: 0.25), color))),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 3),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [
+                        color,
+                        Color.lerp(color, Colors.white, 0.25)!,
+                      ]),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text('Lv.${selected.level}',
+                        style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _growthRow(Fa7.star, '经验',
+                  '${selected.exp}/${selected.expToNext}', color),
+              const SizedBox(height: 2),
+              Stack(
+                children: [
+                  Container(
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0F0F3),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                  FractionallySizedBox(
+                    widthFactor: progress <= 0 ? 0.001 : progress,
+                    child: Container(
+                      height: 8,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(colors: [
+                          color,
+                          Color.lerp(color, Colors.white, 0.35)!,
+                        ]),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              _growthRow(Fa7.faceSmile, '心情',
+                  '${_moodEmoji(selected.mood)} ${selected.mood}/100', color),
+              _growthRow(Fa7.handPointer, '互动次数',
+                  '${selected.totalInteractions}', color),
+              _growthRow(Fa7.clock, '陪伴时长', '$hours小时$mins分钟', color),
+              _growthRow(Fa7.calendarDays, '相识天数', '$days天', color),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _growthRow(IconData icon, String k, String v, Color color) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2.5),
+        child: Row(
+          children: [
+            Icon(icon, size: 12, color: color.withValues(alpha: 0.55)),
+            const SizedBox(width: 6),
+            Text(k,
+                style: const TextStyle(fontSize: 12, color: Color(0xFF8A8A8A))),
+            const Spacer(),
+            Text(v,
+                style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF3A3A3A),
+                    fontWeight: FontWeight.w600)),
+          ],
+        ),
+      );
 
   Widget _buildSkinSection() {
     final skin = cfg.skinOf(_animalId);
@@ -255,6 +420,29 @@ class _SettingsPageState extends State<SettingsPage> {
               child: ListView(
                 padding: const EdgeInsets.all(20),
                 children: [
+                Row(
+                  children: [
+                    const Icon(Fa7.chartLine, size: 14, color: Color(0xFF5C6BC0)),
+                    const SizedBox(width: 8),
+                    const Text('成长记录',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    if (_growthList.isNotEmpty)
+                      TextButton.icon(
+                        onPressed: () => setState(() {
+                          _growthDesc = !_growthDesc;
+                          _sortGrowth();
+                        }),
+                        icon: Icon(_growthDesc ? Fa7.arrowDown : Fa7.arrowUp,
+                            size: 12),
+                        label: Text('陪伴时长 ${_growthDesc ? '倒序' : '升序'}',
+                            style: const TextStyle(fontSize: 12)),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _buildGrowthSection(),
+                const Divider(height: 32),
                 const Row(
                   children: [
                     Icon(Fa7.paw, size: 14, color: Color(0xFF5C6BC0)),
@@ -264,18 +452,24 @@ class _SettingsPageState extends State<SettingsPage> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: kAnimals.map((a) {
-                    final selected = a.id == _animalId;
-                    return ChoiceChip(
-                      label: Text('${a.emoji} ${a.name}', style: const TextStyle(fontSize: 12)),
-                      selected: selected,
-                      selectedColor: a.themeColor.withValues(alpha: 0.3),
-                      onSelected: (_) => setState(() => _animalId = a.id),
-                    );
-                  }).toList(),
+                _dropdown<String>(
+                  value: _animalId,
+                  items: kAnimals
+                      .map((a) => DropdownMenuItem(
+                            value: a.id,
+                            child: Row(
+                              children: [
+                                _animalAvatar(a.id, a.emoji),
+                                const SizedBox(width: 8),
+                                Text(a.name,
+                                    style: const TextStyle(fontSize: 13)),
+                              ],
+                            ),
+                          ))
+                      .toList(),
+                  onChanged: (v) {
+                    if (v != null) setState(() => _animalId = v);
+                  },
                 ),
                 const SizedBox(height: 16),
                 _buildSkinSection(),
@@ -349,6 +543,44 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _animalAvatar(String id, String emoji, {double size = 22}) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Image.asset(
+        'assets/animals/$id.png',
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.medium,
+        errorBuilder: (_, __, ___) =>
+            Text(emoji, style: TextStyle(fontSize: size * 0.8)),
+      ),
+    );
+  }
+
+  Widget _dropdown<T>({
+    required T value,
+    required List<DropdownMenuItem<T>> items,
+    required ValueChanged<T?> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.black26),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<T>(
+          value: value,
+          isExpanded: true,
+          isDense: true,
+          borderRadius: BorderRadius.circular(8),
+          items: items,
+          onChanged: onChanged,
+        ),
       ),
     );
   }

@@ -23,6 +23,64 @@ class GrowthEvent {
       {'time': time.toIso8601String(), 'type': type, 'detail': detail};
 }
 
+/// Read-only view of a single animal's growth data, loaded directly from disk
+/// without starting timers or writing. Used by the settings page browser.
+class GrowthSnapshot {
+  final String animalId;
+  final DateTime createdAt;
+  final int level;
+  final int exp;
+  final int mood;
+  final int totalInteractions;
+  final int totalOnlineMinutes;
+  final DateTime lastActiveAt;
+
+  GrowthSnapshot({
+    required this.animalId,
+    required this.createdAt,
+    required this.level,
+    required this.exp,
+    required this.mood,
+    required this.totalInteractions,
+    required this.totalOnlineMinutes,
+    required this.lastActiveAt,
+  });
+
+  int get expToNext => 100 * level;
+
+  factory GrowthSnapshot.fromJson(String animalId, Map<String, dynamic> j) {
+    return GrowthSnapshot(
+      animalId: j['animalId'] ?? animalId,
+      createdAt: DateTime.tryParse(j['createdAt'] ?? '') ?? DateTime.now(),
+      level: j['level'] ?? 1,
+      exp: j['exp'] ?? 0,
+      mood: j['mood'] ?? 80,
+      totalInteractions: j['totalInteractions'] ?? 0,
+      totalOnlineMinutes: j['totalOnlineMinutes'] ?? 0,
+      lastActiveAt: DateTime.tryParse(j['lastActiveAt'] ?? '') ?? DateTime.now(),
+    );
+  }
+
+  static List<GrowthSnapshot> loadAll() {
+    final result = <GrowthSnapshot>[];
+    try {
+      final dir = AppPaths.growthDir;
+      for (final entity in dir.listSync()) {
+        if (entity is! File || !entity.path.toLowerCase().endsWith('.json')) {
+          continue;
+        }
+        try {
+          final name = entity.uri.pathSegments.last;
+          final id = name.substring(0, name.length - 5);
+          final j = jsonDecode(entity.readAsStringSync()) as Map<String, dynamic>;
+          result.add(GrowthSnapshot.fromJson(id, j));
+        } catch (_) {}
+      }
+    } catch (_) {}
+    return result;
+  }
+}
+
 class GrowthService extends ChangeNotifier {
   final String animalId;
 
