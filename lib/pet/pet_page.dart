@@ -6,6 +6,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../core/animals.dart';
+import '../core/click_through.dart';
 import '../core/config.dart';
 import '../core/fa_icons.dart';
 import '../growth/growth_service.dart';
@@ -63,6 +64,18 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
     _spinCurve =
         CurvedAnimation(parent: _spin, curve: Curves.easeInOutCubic);
     c.addListener(_onState);
+    final ct = ClickThroughService.instance;
+    ct.hitRectProvider = _petHitRect;
+    ct.start();
+  }
+
+  // 动物 bottom:8、水平居中、边长 96*scale；四周留余量（顶部含跳跃 -26px）
+  Rect _petHitRect() {
+    const w = 280.0, h = 380.0;
+    final size = 96 * c.petScale;
+    final left = (w - size) / 2 - 8;
+    final top = h - 8 - size - 30;
+    return Rect.fromLTWH(left, top, size + 16, size + 38);
   }
 
   PetState? _prev;
@@ -92,6 +105,7 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
   @override
   void dispose() {
     c.removeListener(_onState);
+    ClickThroughService.instance.stop();
     _breath.dispose();
     _bounce.dispose();
     _blink.dispose();
@@ -111,12 +125,14 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
       _menuPos = Offset(dx, dy);
       _menuOpen = true;
     });
+    ClickThroughService.instance.forceInteractive = true;
     _menu.forward(from: 0);
   }
 
   void _closeMenu() {
     if (!_menuOpen) return;
     _menu.reverse().whenComplete(() {
+      ClickThroughService.instance.forceInteractive = false;
       if (mounted) setState(() => _menuOpen = false);
     });
   }
@@ -243,6 +259,8 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final animal = c.animal;
+    ClickThroughService.instance.devicePixelRatio =
+        MediaQuery.of(context).devicePixelRatio;
     return Stack(
       alignment: Alignment.bottomCenter,
       children: [
