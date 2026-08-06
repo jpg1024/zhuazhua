@@ -45,7 +45,7 @@ class PetController extends ChangeNotifier {
     _scheduleBlink();
     _sleepTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (state == PetState.idle &&
-          DateTime.now().difference(_lastInteraction).inMinutes >= 5) {
+          DateTime.now().difference(_lastInteraction).inMinutes >= 60) {
         state = PetState.sleep;
         notifyListeners();
       }
