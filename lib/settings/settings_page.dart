@@ -28,6 +28,7 @@ class _SettingsPageState extends State<SettingsPage> {
   late final TextEditingController _interval;
   late bool _aiEnabled;
   late double _scale;
+  late String _patrolDirection;
   String? _status;
   bool _testing = false;
   bool _skinBusy = false;
@@ -48,6 +49,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _interval = TextEditingController(text: '${cfg.ai.tipIntervalMinutes}');
     _aiEnabled = cfg.ai.enabled;
     _scale = cfg.petScale;
+    _patrolDirection = cfg.patrolDirection;
     _growthList = GrowthSnapshot.loadAll();
     _sortGrowth();
     if (_growthList.isNotEmpty) _selectedGrowthId = _growthList.first.animalId;
@@ -72,6 +74,7 @@ class _SettingsPageState extends State<SettingsPage> {
       ..enabled = _aiEnabled
       ..tipIntervalMinutes = int.tryParse(_interval.text) ?? 45;
     cfg.petScale = _scale;
+    cfg.patrolDirection = _patrolDirection;
     cfg.save();
     setState(() =>
         _status = animalChanged ? '已保存。切换动物将在重启后生效。' : '已保存。');
@@ -493,6 +496,47 @@ class _SettingsPageState extends State<SettingsPage> {
                   label: '${(_scale * 100).round()}%',
                   onChanged: (v) => setState(() => _scale = v),
                 ),
+                const Divider(height: 32),
+                Row(
+                  children: [
+                    const Icon(Fa7.keyboard, size: 14, color: Color(0xFF5C6BC0)),
+                    const SizedBox(width: 8),
+                    const Text('打字时宠物移动方向',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    Text(
+                      {'left': '左侧消失', 'right': '右侧消失', 'random': '随机'}[
+                              _patrolDirection] ??
+                          '左侧消失',
+                      style: const TextStyle(
+                          fontSize: 12, color: Color(0xFF5C6BC0)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                _dropdown<String>(
+                  value: _patrolDirection,
+                  items: const [
+                    DropdownMenuItem(
+                        value: 'left',
+                        child: Text('从左侧消失，右侧进入',
+                            style: TextStyle(fontSize: 13))),
+                    DropdownMenuItem(
+                        value: 'right',
+                        child: Text('从右侧消失，左侧进入',
+                            style: TextStyle(fontSize: 13))),
+                    DropdownMenuItem(
+                        value: 'random',
+                        child: Text('随机方向',
+                            style: TextStyle(fontSize: 13))),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setState(() => _patrolDirection = v);
+                  },
+                ),
+                const SizedBox(height: 4),
+                const Text('重启后生效。检测到键盘输入时宠物会在 200px 范围内巡逻。',
+                    style: TextStyle(fontSize: 11, color: Colors.black38)),
                 const Divider(height: 32),
                 Row(
                   children: [

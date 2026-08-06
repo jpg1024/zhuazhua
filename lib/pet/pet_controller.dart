@@ -6,9 +6,10 @@ import 'package:flutter/foundation.dart';
 import '../ai/ai_client.dart';
 import '../core/animals.dart';
 import '../core/config.dart';
+import '../core/keyboard_hook.dart';
 import '../growth/growth_service.dart';
 
-enum PetState { idle, blink, happy, sleep }
+enum PetState { idle, blink, happy, sleep, patrol }
 
 class PetController extends ChangeNotifier {
   final AnimalInfo animal;
@@ -26,7 +27,15 @@ class PetController extends ChangeNotifier {
   Timer? _sleepTimer;
   Timer? _tipTimer;
   Timer? _growthCardTimer;
+  Timer? _patrolDebounce;
+  Timer? _patrolStopTimer;
   DateTime _lastInteraction = DateTime.now();
+
+  /// 本次巡逻的实际方向（'left' 或 'right'），由 resolvePatrolDirection() 决定
+  String patrolActualDirection = 'left';
+
+  /// 是否正在巡逻（供 UI 层读取）
+  bool get isPatrolling => state == PetState.patrol;
 
   PetController({
     required this.animal,
@@ -42,6 +51,78 @@ class PetController extends ChangeNotifier {
       }
     });
     _scheduleTip();
+    _initKeyboardHook();
+  }
+
+  void _initKeyboardHook() {
+    final hook = KeyboardHookService.instance;
+    hook.install();
+    hook.activityStream.listen((isTyping) {
+      if (isTyping) {
+        _onTypingDetected();
+      } else {
+        _onTypingStopped();
+      }
+    });
+  }
+
+  void _onTypingDetected() {
+    // 已经在巡逻或睡眠中则不处理
+    if (state == PetState.patrol || state == PetState.sleep) return;
+
+    // 防抖：300ms 后确认仍在打字才启动巡逻
+    _patrolDebounce?.cancel();
+    _patrolStopTimer?.cancel();
+    _patrolDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (KeyboardHookService.instance.isTyping && state != PetState.patrol) {
+        _startPatrol();
+      }
+    });
+  }
+
+  void _onTypingStopped() {
+    // 如果正在巡逻，延迟 2 秒后停止
+    if (state == PetState.patrol) {
+      _patrolStopTimer?.cancel();
+      _patrolStopTimer = Timer(const Duration(seconds: 2), () {
+        if (!KeyboardHookService.instance.isTyping) {
+          _stopPatrol();
+        }
+      });
+    }
+  }
+
+  void _startPatrol() {
+    patrolActualDirection = _resolvePatrolDirection();
+    state = PetState.patrol;
+    notifyListeners();
+  }
+
+  void _stopPatrol() {
+    if (state != PetState.patrol) return;
+    state = PetState.idle;
+    notifyListeners();
+  }
+
+  /// 根据配置解析实际巡逻方向
+  String _resolvePatrolDirection() {
+    switch (config.patrolDirection) {
+      case 'left':
+        return 'left';
+      case 'right':
+        return 'right';
+      case 'random':
+        return _rand.nextBool() ? 'left' : 'right';
+      default:
+        return 'left';
+    }
+  }
+
+  /// 巡逻结束归位后调用（由 UI 层动画完成时触发）
+  void onPatrolReturned() {
+    // 归位完成，2 秒内不再触发
+    _patrolStopTimer?.cancel();
+    _patrolStopTimer = Timer(const Duration(seconds: 2), () {});
   }
 
   List<String> get _phrases => phrasesFor(animal);
@@ -166,6 +247,9 @@ class PetController extends ChangeNotifier {
     _sleepTimer?.cancel();
     _tipTimer?.cancel();
     _growthCardTimer?.cancel();
+    _patrolDebounce?.cancel();
+    _patrolStopTimer?.cancel();
+    KeyboardHookService.instance.dispose();
     super.dispose();
   }
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -39,6 +40,14 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
   late final AnimationController _spin;
   late final Animation<double> _spinCurve;
 
+  // Patrol animation controllers
+  late final AnimationController _patrolFade;
+  late final AnimationController _patrolWave;
+  Timer? _patrolMoveTimer;
+  Offset _patrolOrigin = Offset.zero;
+  String _patrolPhase = 'idle'; // idle, entering, patrolling, exiting
+  bool _patrolFlipX = false;
+
   bool _menuOpen = false;
   bool _hoverSpun = false;
   Offset _menuPos = const Offset(8, 8);
@@ -63,6 +72,12 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
         vsync: this, duration: const Duration(milliseconds: 2000));
     _spinCurve =
         CurvedAnimation(parent: _spin, curve: Curves.easeInOutCubic);
+    _patrolFade = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 300));
+    _patrolWave = AnimationController(
+        vsync: this,
+        duration: Duration(
+            milliseconds: c.animal.hasWings ? 5000 : 4000));
     c.addListener(_onState);
     final ct = ClickThroughService.instance;
     ct.hitRectProvider = _petHitRect;
@@ -99,18 +114,27 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
       }
       _wasSleeping = sleeping;
     }
+    // Patrol state transitions
+    if (c.state == PetState.patrol && _prev != PetState.patrol) {
+      _startPatrolAnimation();
+    } else if (c.state != PetState.patrol && _prev == PetState.patrol) {
+      _stopPatrolAnimation();
+    }
     _prev = c.state;
   }
 
   @override
   void dispose() {
     c.removeListener(_onState);
+    _patrolMoveTimer?.cancel();
     ClickThroughService.instance.stop();
     _breath.dispose();
     _bounce.dispose();
     _blink.dispose();
     _menu.dispose();
     _spin.dispose();
+    _patrolFade.dispose();
+    _patrolWave.dispose();
     super.dispose();
   }
 
@@ -153,6 +177,72 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
       case 'exit':
         widget.onExit();
     }
+  }
+
+  // ── Patrol animation ─────────────────────────────────────────────────────
+
+  Future<void> _startPatrolAnimation() async {
+    _patrolPhase = 'entering';
+    _patrolOrigin = await windowManager.getPosition();
+
+    // 1. 淡出
+    await _patrolFadeOut();
+
+    // 2. 根据方向瞬移窗口
+    final dir = c.patrolActualDirection;
+    _patrolFlipX = dir == 'left';
+    final target = _patrolOrigin.translate(dir == 'left' ? 100 : -100, 0);
+    await windowManager.setPosition(target);
+
+    // 3. 淡入
+    await _patrolFadeIn();
+
+    // 4. 开始巡逻移动 + 飞/跑波浪动画
+    _patrolPhase = 'patrolling';
+    _patrolWave.repeat(reverse: false);
+    _patrolMoveTimer = Timer.periodic(
+        const Duration(milliseconds: 16), (_) => _updatePatrolPosition());
+  }
+
+  Future<void> _stopPatrolAnimation() async {
+    _patrolPhase = 'exiting';
+    _patrolMoveTimer?.cancel();
+    _patrolWave.stop();
+
+    // 1. 淡出
+    await _patrolFadeOut();
+
+    // 2. 回到原位
+    await windowManager.setPosition(_patrolOrigin);
+
+    // 3. 淡入
+    await _patrolFadeIn();
+
+    _patrolPhase = 'idle';
+    _patrolFlipX = false;
+    c.onPatrolReturned();
+  }
+
+  Future<void> _patrolFadeOut() {
+    return _patrolFade.forward(from: 0).orCancel.then((_) {});
+  }
+
+  Future<void> _patrolFadeIn() {
+    return _patrolFade.reverse(from: 1).orCancel.then((_) {});
+  }
+
+  void _updatePatrolPosition() {
+    if (_patrolPhase != 'patrolling') return;
+    final t = _patrolWave.value;
+    final dir = c.patrolActualDirection;
+    // sin 曲线在 200px 范围内来回移动
+    final sinVal = math.sin(t * 2 * math.pi);
+    // 'left': 从 +100 向 -100 移动（宠物从右侧进入）
+    // 'right': 从 -100 向 +100 移动（宠物从左侧进入）
+    final actualDx = dir == 'left'
+        ? 100 - sinVal * 100   // 100 → 0 → -100 → 0 → 100
+        : -100 + sinVal * 100; // -100 → 0 → 100 → 0 → -100
+    windowManager.setPosition(_patrolOrigin.translate(actualDx, 0));
   }
 
   Widget _buildMenu(AnimalInfo animal) {
@@ -322,7 +412,7 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
                 onSecondaryTapUp: (d) => _openMenu(d.localPosition),
                 child: AnimatedBuilder(
                   animation: Listenable.merge(
-                      [_breathCurve, _bounce, _blink, _spinCurve]),
+                      [_breathCurve, _bounce, _blink, _spinCurve, _patrolFade, _patrolWave]),
                   child: ListenableBuilder(
                     listenable: c,
                     builder: (context, _) => _PetVisual(
@@ -347,16 +437,59 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
                             0.9 *
                                 Curves.easeInOut
                                     .transform((st - 0.35) / 0.65);
-                    return Transform.translate(
-                      offset: Offset(0, bounceY),
-                      child: Transform.rotate(
-                        angle: spinAngle,
-                        child: Transform.scale(
-                          scaleY: breathScale * squishY * stretch * spinShrink,
-                          scaleX: squishX *
-                              (2 - stretch).clamp(0.9, 1.1) *
-                              spinShrink,
-                          child: child,
+
+                    // Patrol transforms
+                    final isPatrol = _patrolPhase != 'idle';
+                    final waveT = _patrolWave.value;
+                    final hasWings = c.animal.hasWings;
+
+                    // 透明度：
+                    // - entering/exiting 阶段用 _patrolFade 做过渡淡出淡入
+                    // - patrolling 阶段按位置：中心最亮，两端淡出（消失→重现效果）
+                    double patrolOpacity;
+                    if (_patrolPhase == 'patrolling') {
+                      final sinVal = math.sin(waveT * 2 * math.pi);
+                      // sinVal 在 [-1, 1]，|sinVal| 越接近 1 越靠近边缘
+                      patrolOpacity = 1.0 - sinVal * sinVal;
+                    } else if (isPatrol) {
+                      patrolOpacity = 1.0 - _patrolFade.value;
+                    } else {
+                      patrolOpacity = 1.0;
+                    }
+
+                    // 飞翔：大幅度波浪起伏 + 翅膀扇动(scaleY)
+                    // 奔跑：小幅度颠簸 + 轻微倾斜
+                    final patrolBob = isPatrol
+                        ? math.sin(waveT * 2 * math.pi) *
+                            (hasWings ? 12.0 : 5.0)
+                        : 0.0;
+                    final patrolTilt = isPatrol && !hasWings
+                        ? math.cos(waveT * 2 * math.pi) * 0.12
+                        : 0.0;
+                    final wingFlap = isPatrol && hasWings
+                        ? 1.0 + math.sin(waveT * 4 * math.pi) * 0.15
+                        : 1.0;
+
+                    return Opacity(
+                      opacity: patrolOpacity.clamp(0.0, 1.0),
+                      child: Transform.translate(
+                        offset: Offset(0, bounceY + patrolBob),
+                        child: Transform.rotate(
+                          angle: spinAngle + patrolTilt,
+                          child: Transform.scale(
+                            scaleY: breathScale *
+                                squishY *
+                                stretch *
+                                spinShrink *
+                                wingFlap,
+                            scaleX: squishX *
+                                (2 - stretch).clamp(0.9, 1.1) *
+                                spinShrink,
+                            child: Transform.flip(
+                              flipX: _patrolFlipX,
+                              child: child,
+                            ),
+                          ),
                         ),
                       ),
                     );

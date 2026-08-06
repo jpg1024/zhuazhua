@@ -84,6 +84,9 @@ class AppConfig {
   double petScale;
   Map<String, AnimalSkin> skins;
 
+  /// 键盘输入时宠物巡逻方向：'left'=从左侧消失右侧进入, 'right'=反向, 'random'=随机
+  String patrolDirection;
+
   AppConfig({
     this.animalId = 'cat',
     AiConfig? ai,
@@ -91,6 +94,7 @@ class AppConfig {
     this.windowY,
     this.petScale = 1.0,
     Map<String, AnimalSkin>? skins,
+    this.patrolDirection = 'left',
   })  : ai = ai ?? AiConfig(),
         skins = skins ?? {};
 
@@ -109,6 +113,7 @@ class AppConfig {
           windowX: (j['windowX'] as num?)?.toDouble(),
           windowY: (j['windowY'] as num?)?.toDouble(),
           petScale: (j['petScale'] as num?)?.toDouble() ?? 1.0,
+          patrolDirection: j['patrolDirection'] ?? 'left',
           skins: skinsJson.map((k, v) =>
               MapEntry(k, AnimalSkin.fromJson(v as Map<String, dynamic>))),
         );
@@ -126,6 +131,7 @@ class AppConfig {
         'windowX': windowX,
         'windowY': windowY,
         'petScale': petScale,
+        'patrolDirection': patrolDirection,
         'skins': {
           for (final e in skins.entries)
             if (!e.value.isEmpty) e.key: e.value.toJson()

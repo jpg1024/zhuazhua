@@ -8,6 +8,9 @@ class AnimalInfo {
   final Color themeColor;
   final List<String> phrases;
 
+  /// 有翅膀且会飞 → true（巡逻时飞翔动画）；否则 → false（巡逻时奔跑动画）
+  final bool hasWings;
+
   const AnimalInfo({
     required this.id,
     required this.name,
@@ -15,6 +18,7 @@ class AnimalInfo {
     required this.personality,
     required this.themeColor,
     this.phrases = const [],
+    this.hasWings = false,
   });
 }
 
@@ -50,18 +54,18 @@ const List<AnimalInfo> kAnimals = [
   AnimalInfo(id: 'orangutan', name: '猩猩', emoji: '🦧', personality: '聪明沉稳', themeColor: Color(0xFFB06A3B)),
   AnimalInfo(id: 'otter', name: '水獭', emoji: '🦦', personality: '爱玩水', themeColor: Color(0xFF8B9E6B)),
   AnimalInfo(id: 'red_panda', name: '小熊猫', emoji: '🐾', personality: '软萌可爱', themeColor: Color(0xFFCB6843)),
-  AnimalInfo(id: 'eagle', name: '鹰', emoji: '🦅', personality: '锐利威武', themeColor: Color(0xFF7B6A55)),
-  AnimalInfo(id: 'parrot', name: '鹦鹉', emoji: '🦜', personality: '话痨社牛', themeColor: Color(0xFF4FA85C)),
-  AnimalInfo(id: 'mandarin_duck', name: '鸳鸯', emoji: '🦆', personality: '成双成对', themeColor: Color(0xFFCF7BA0)),
+  AnimalInfo(id: 'eagle', name: '鹰', emoji: '🦅', personality: '锐利威武', themeColor: Color(0xFF7B6A55), hasWings: true),
+  AnimalInfo(id: 'parrot', name: '鹦鹉', emoji: '🦜', personality: '话痨社牛', themeColor: Color(0xFF4FA85C), hasWings: true),
+  AnimalInfo(id: 'mandarin_duck', name: '鸳鸯', emoji: '🦆', personality: '成双成对', themeColor: Color(0xFFCF7BA0), hasWings: true),
   AnimalInfo(id: 'penguin', name: '企鹅', emoji: '🐧', personality: '摇摇摆摆', themeColor: Color(0xFF4A6B8A)),
-  AnimalInfo(id: 'albatross', name: '信天翁', emoji: '🕊️', personality: '远航冒险', themeColor: Color(0xFF9AB3C4)),
-  AnimalInfo(id: 'swan', name: '天鹅', emoji: '🦢', personality: '高贵优雅', themeColor: Color(0xFFB9C4D6)),
+  AnimalInfo(id: 'albatross', name: '信天翁', emoji: '🕊️', personality: '远航冒险', themeColor: Color(0xFF9AB3C4), hasWings: true),
+  AnimalInfo(id: 'swan', name: '天鹅', emoji: '🦢', personality: '高贵优雅', themeColor: Color(0xFFB9C4D6), hasWings: true),
   AnimalInfo(id: 'ostrich', name: '鸵鸟', emoji: '🐦', personality: '大长腿飞毛腿', themeColor: Color(0xFFA88E6F)),
-  AnimalInfo(id: 'heron', name: '鹭', emoji: '🐦', personality: '静如处子', themeColor: Color(0xFF8FA6A0)),
-  AnimalInfo(id: 'grouse', name: '松鸡', emoji: '🐦', personality: '林间隐士', themeColor: Color(0xFF97764F)),
-  AnimalInfo(id: 'woodpecker', name: '啄木鸟', emoji: '🐦', personality: '勤劳敬业', themeColor: Color(0xFFB55B4C)),
-  AnimalInfo(id: 'seagull', name: '海鸥', emoji: '🐦', personality: '自由自在', themeColor: Color(0xFF89A9C9)),
-  AnimalInfo(id: 'hummingbird', name: '蜂鸟', emoji: '🐦', personality: '小巧玲珑', themeColor: Color(0xFF5FA88F)),
+  AnimalInfo(id: 'heron', name: '鹭', emoji: '🐦', personality: '静如处子', themeColor: Color(0xFF8FA6A0), hasWings: true),
+  AnimalInfo(id: 'grouse', name: '松鸡', emoji: '🐦', personality: '林间隐士', themeColor: Color(0xFF97764F), hasWings: true),
+  AnimalInfo(id: 'woodpecker', name: '啄木鸟', emoji: '🐦', personality: '勤劳敬业', themeColor: Color(0xFFB55B4C), hasWings: true),
+  AnimalInfo(id: 'seagull', name: '海鸥', emoji: '🐦', personality: '自由自在', themeColor: Color(0xFF89A9C9), hasWings: true),
+  AnimalInfo(id: 'hummingbird', name: '蜂鸟', emoji: '🐦', personality: '小巧玲珑', themeColor: Color(0xFF5FA88F), hasWings: true),
 ];
 
 AnimalInfo animalById(String id) =>

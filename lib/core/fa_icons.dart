@@ -26,4 +26,5 @@ class Fa7 {
   static const IconData rotateLeft = IconData(0xf2ea, fontFamily: _family);
   static const IconData arrowUp = IconData(0xf062, fontFamily: _family);
   static const IconData arrowDown = IconData(0xf063, fontFamily: _family);
+  static const IconData keyboard = IconData(0xf11c, fontFamily: _family);
 }
