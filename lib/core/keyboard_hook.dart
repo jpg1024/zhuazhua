@@ -23,6 +23,18 @@ class KeyboardHookService {
   final _activityController = StreamController<bool>.broadcast();
   Stream<bool> get activityStream => _activityController.stream;
 
+  // ── 打字速度检测 ──────────────────────────────────────────────────────────
+  DateTime? _lastKeyTimestamp;
+  double _typingSpeed = 0.0;
+  Timer? _decayTimer;
+  final _typingSpeedController = StreamController<double>.broadcast();
+
+  /// 打字速度流：推送归一化速度值（0.0=静止, 1.0=极速）。
+  Stream<double> get typingSpeedStream => _typingSpeedController.stream;
+
+  /// 当前打字速度（0.0~1.0）。
+  double get typingSpeed => _typingSpeed;
+
   /// 当前是否正在打字（距最后一次按键 < 1.5 秒）。
   bool get isTyping =>
       DateTime.now().difference(_lastKeyTime).inMilliseconds < 1500;
@@ -34,6 +46,16 @@ class KeyboardHookService {
 
     _pollTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
       _pollKeys();
+    });
+    // 60fps 衰减定时器：平滑回落到 0
+    _decayTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+      if (_typingSpeed > 0.001) {
+        _typingSpeed *= 0.965;
+        _typingSpeedController.add(_typingSpeed);
+      } else if (_typingSpeed > 0) {
+        _typingSpeed = 0;
+        _typingSpeedController.add(0);
+      }
     });
   }
 
@@ -47,7 +69,19 @@ class KeyboardHookService {
       final state = _getAsyncKeyState(vk);
       // 高位为 1 表示按键当前处于按下状态
       if (state & 0x8000 != 0) {
-        _lastKeyTime = DateTime.now();
+        final now = DateTime.now();
+        _lastKeyTime = now;
+        // 计算打字速度
+        if (_lastKeyTimestamp != null) {
+          final interval = now.difference(_lastKeyTimestamp!).inMilliseconds;
+          if (interval > 0 && interval < 2000) {
+            // 100ms → 1.0（极速），500ms → 0.2（慢速），≥1000ms → ~0.05
+            final instant = (100.0 / interval).clamp(0.05, 1.0);
+            _typingSpeed = _typingSpeed * 0.6 + instant * 0.4;
+            _typingSpeedController.add(_typingSpeed);
+          }
+        }
+        _lastKeyTimestamp = now;
         break;
       }
     }
@@ -64,11 +98,14 @@ class KeyboardHookService {
   void uninstall() {
     _pollTimer?.cancel();
     _pollTimer = null;
+    _decayTimer?.cancel();
+    _decayTimer = null;
     _installed = false;
   }
 
   void dispose() {
     uninstall();
     _activityController.close();
+    _typingSpeedController.close();
   }
 }
