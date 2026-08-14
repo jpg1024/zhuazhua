@@ -14,7 +14,6 @@ import '../growth/growth_service.dart';
 import '../skin/model_pet_view.dart';
 import '../skin/pseudo3d_image.dart';
 import 'pet_controller.dart';
-import 'spinning_accessory.dart';
 
 class PetPage extends StatefulWidget {
   final PetController controller;
@@ -509,18 +508,6 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
                   child: Text('💤', style: TextStyle(fontSize: 22)))
               : const Positioned(bottom: 0, child: SizedBox.shrink()),
         ),
-        // 打字旋转配饰
-        if (c.config.accessoryEnabled)
-          Positioned(
-            top: null,
-            bottom: 8 + 96 * c.petScale + 24,
-            left: c.config.accessoryPosition == 'topLeft' ? 18 : null,
-            right: c.config.accessoryPosition == 'topRight' ? 18 : null,
-            child: SpinningAccessory(
-              type: c.config.accessoryType,
-              position: c.config.accessoryPosition,
-            ),
-          ),
         if (_menuOpen) ...[
           Positioned.fill(
             child: GestureDetector(

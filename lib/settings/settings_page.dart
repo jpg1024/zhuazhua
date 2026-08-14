@@ -29,9 +29,6 @@ class _SettingsPageState extends State<SettingsPage> {
   late bool _aiEnabled;
   late double _scale;
   late String _patrolDirection;
-  late bool _accessoryEnabled;
-  late String _accessoryType;
-  late String _accessoryPosition;
   String? _status;
   bool _testing = false;
   bool _skinBusy = false;
@@ -53,9 +50,6 @@ class _SettingsPageState extends State<SettingsPage> {
     _aiEnabled = cfg.ai.enabled;
     _scale = cfg.petScale;
     _patrolDirection = cfg.patrolDirection;
-    _accessoryEnabled = cfg.accessoryEnabled;
-    _accessoryType = cfg.accessoryType;
-    _accessoryPosition = cfg.accessoryPosition;
     _growthList = GrowthSnapshot.loadAll();
     _sortGrowth();
     if (_growthList.isNotEmpty) _selectedGrowthId = _growthList.first.animalId;
@@ -81,9 +75,6 @@ class _SettingsPageState extends State<SettingsPage> {
       ..tipIntervalMinutes = int.tryParse(_interval.text) ?? 45;
     cfg.petScale = _scale;
     cfg.patrolDirection = _patrolDirection;
-    cfg.accessoryEnabled = _accessoryEnabled;
-    cfg.accessoryType = _accessoryType;
-    cfg.accessoryPosition = _accessoryPosition;
     cfg.save();
     setState(() =>
         _status = animalChanged ? '已保存。切换动物将在重启后生效。' : '已保存。');
@@ -546,58 +537,6 @@ class _SettingsPageState extends State<SettingsPage> {
                 const SizedBox(height: 4),
                 const Text('重启后生效。检测到键盘输入时宠物会在 200px 范围内巡逻。',
                     style: TextStyle(fontSize: 11, color: Colors.black38)),
-                const Divider(height: 32),
-                Row(
-                  children: [
-                    const Icon(Fa7.globe, size: 14, color: Color(0xFF5C6BC0)),
-                    const SizedBox(width: 8),
-                    const Text('打字旋转配饰',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                    const Spacer(),
-                    Switch(
-                      value: _accessoryEnabled,
-                      onChanged: (v) => setState(() => _accessoryEnabled = v),
-                    ),
-                  ],
-                ),
-                if (_accessoryEnabled) ...[
-                  const SizedBox(height: 4),
-                  _dropdown<String>(
-                    value: _accessoryType,
-                    items: const [
-                      DropdownMenuItem(
-                          value: 'soccer',
-                          child: Text('⚽ 足球', style: TextStyle(fontSize: 13))),
-                      DropdownMenuItem(
-                          value: 'basketball',
-                          child: Text('🏀 篮球', style: TextStyle(fontSize: 13))),
-                      DropdownMenuItem(
-                          value: 'globe',
-                          child: Text('🌍 地球仪', style: TextStyle(fontSize: 13))),
-                    ],
-                    onChanged: (v) {
-                      if (v != null) setState(() => _accessoryType = v);
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  _dropdown<String>(
-                    value: _accessoryPosition,
-                    items: const [
-                      DropdownMenuItem(
-                          value: 'topLeft',
-                          child: Text('左上角', style: TextStyle(fontSize: 13))),
-                      DropdownMenuItem(
-                          value: 'topRight',
-                          child: Text('右上角', style: TextStyle(fontSize: 13))),
-                    ],
-                    onChanged: (v) {
-                      if (v != null) setState(() => _accessoryPosition = v);
-                    },
-                  ),
-                  const SizedBox(height: 4),
-                  const Text('打字时配饰会旋转，速度越快转得越快。',
-                      style: TextStyle(fontSize: 11, color: Colors.black38)),
-                ],
                 const Divider(height: 32),
                 Row(
                   children: [

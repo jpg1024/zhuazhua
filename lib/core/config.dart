@@ -87,15 +87,6 @@ class AppConfig {
   /// 键盘输入时宠物巡逻方向：'left'=从左侧消失右侧进入, 'right'=反向, 'random'=随机
   String patrolDirection;
 
-  /// 打字旋转配饰是否启用
-  bool accessoryEnabled;
-
-  /// 配饰类型：'soccer' / 'basketball' / 'globe'
-  String accessoryType;
-
-  /// 配饰位置：'topLeft' / 'topRight'
-  String accessoryPosition;
-
   AppConfig({
     this.animalId = 'cat',
     AiConfig? ai,
@@ -104,9 +95,6 @@ class AppConfig {
     this.petScale = 1.0,
     Map<String, AnimalSkin>? skins,
     this.patrolDirection = 'left',
-    this.accessoryEnabled = true,
-    this.accessoryType = 'soccer',
-    this.accessoryPosition = 'topLeft',
   })  : ai = ai ?? AiConfig(),
         skins = skins ?? {};
 
@@ -126,9 +114,6 @@ class AppConfig {
           windowY: (j['windowY'] as num?)?.toDouble(),
           petScale: (j['petScale'] as num?)?.toDouble() ?? 1.0,
           patrolDirection: j['patrolDirection'] ?? 'left',
-          accessoryEnabled: j['accessoryEnabled'] ?? true,
-          accessoryType: j['accessoryType'] ?? 'soccer',
-          accessoryPosition: j['accessoryPosition'] ?? 'topLeft',
           skins: skinsJson.map((k, v) =>
               MapEntry(k, AnimalSkin.fromJson(v as Map<String, dynamic>))),
         );
@@ -147,9 +132,6 @@ class AppConfig {
         'windowY': windowY,
         'petScale': petScale,
         'patrolDirection': patrolDirection,
-        'accessoryEnabled': accessoryEnabled,
-        'accessoryType': accessoryType,
-        'accessoryPosition': accessoryPosition,
         'skins': {
           for (final e in skins.entries)
             if (!e.value.isEmpty) e.key: e.value.toJson()
