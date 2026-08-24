@@ -87,6 +87,9 @@ class AppConfig {
   /// 键盘输入时宠物巡逻方向：'left'=从左侧消失右侧进入, 'right'=反向, 'random'=随机
   String patrolDirection;
 
+  /// 无操作达到该时长（分钟）后宠物自动进入休眠，默认 60 分钟
+  double sleepTimeoutMinutes;
+
   AppConfig({
     this.animalId = 'cat',
     AiConfig? ai,
@@ -95,6 +98,7 @@ class AppConfig {
     this.petScale = 1.0,
     Map<String, AnimalSkin>? skins,
     this.patrolDirection = 'left',
+    this.sleepTimeoutMinutes = 60,
   })  : ai = ai ?? AiConfig(),
         skins = skins ?? {};
 
@@ -114,6 +118,8 @@ class AppConfig {
           windowY: (j['windowY'] as num?)?.toDouble(),
           petScale: (j['petScale'] as num?)?.toDouble() ?? 1.0,
           patrolDirection: j['patrolDirection'] ?? 'left',
+          sleepTimeoutMinutes:
+              (j['sleepTimeoutMinutes'] as num?)?.toDouble() ?? 60,
           skins: skinsJson.map((k, v) =>
               MapEntry(k, AnimalSkin.fromJson(v as Map<String, dynamic>))),
         );
@@ -132,6 +138,7 @@ class AppConfig {
         'windowY': windowY,
         'petScale': petScale,
         'patrolDirection': patrolDirection,
+        'sleepTimeoutMinutes': sleepTimeoutMinutes,
         'skins': {
           for (final e in skins.entries)
             if (!e.value.isEmpty) e.key: e.value.toJson()

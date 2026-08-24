@@ -29,6 +29,7 @@ class _SettingsPageState extends State<SettingsPage> {
   late bool _aiEnabled;
   late double _scale;
   late String _patrolDirection;
+  late double _sleepTimeoutMinutes;
   String? _status;
   bool _testing = false;
   bool _skinBusy = false;
@@ -50,6 +51,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _aiEnabled = cfg.ai.enabled;
     _scale = cfg.petScale;
     _patrolDirection = cfg.patrolDirection;
+    _sleepTimeoutMinutes = cfg.sleepTimeoutMinutes;
     _growthList = GrowthSnapshot.loadAll();
     _sortGrowth();
     if (_growthList.isNotEmpty) _selectedGrowthId = _growthList.first.animalId;
@@ -75,6 +77,7 @@ class _SettingsPageState extends State<SettingsPage> {
       ..tipIntervalMinutes = int.tryParse(_interval.text) ?? 45;
     cfg.petScale = _scale;
     cfg.patrolDirection = _patrolDirection;
+    cfg.sleepTimeoutMinutes = _sleepTimeoutMinutes;
     cfg.save();
     setState(() =>
         _status = animalChanged ? '已保存。切换动物将在重启后生效。' : '已保存。');
@@ -154,6 +157,12 @@ class _SettingsPageState extends State<SettingsPage> {
     if (mood >= 80) return '😊';
     if (mood >= 50) return '🙂';
     return '😔';
+  }
+
+  /// 把分钟数格式化为"X 小时 / X.5 小时"显示
+  String _fmtSleepHours(double minutes) {
+    final h = minutes / 60;
+    return h == h.roundToDouble() ? '${h.round()} 小时' : '$h 小时';
   }
 
   Widget _buildGrowthSection() {
@@ -536,6 +545,54 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 const SizedBox(height: 4),
                 const Text('重启后生效。检测到键盘输入时宠物会在 200px 范围内巡逻。',
+                    style: TextStyle(fontSize: 11, color: Colors.black38)),
+                const Divider(height: 32),
+                Row(
+                  children: [
+                    const Icon(Fa7.clock, size: 14, color: Color(0xFF5C6BC0)),
+                    const SizedBox(width: 8),
+                    const Text('休眠时间',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    Text(
+                      _fmtSleepHours(_sleepTimeoutMinutes),
+                      style: const TextStyle(
+                          fontSize: 12, color: Color(0xFF5C6BC0)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                _dropdown<double>(
+                  value: _sleepTimeoutMinutes,
+                  items: const [
+                    DropdownMenuItem(
+                        value: 30.0,
+                        child:
+                            Text('0.5 小时', style: TextStyle(fontSize: 13))),
+                    DropdownMenuItem(
+                        value: 60.0,
+                        child: Text('1 小时', style: TextStyle(fontSize: 13))),
+                    DropdownMenuItem(
+                        value: 90.0,
+                        child:
+                            Text('1.5 小时', style: TextStyle(fontSize: 13))),
+                    DropdownMenuItem(
+                        value: 120.0,
+                        child: Text('2 小时', style: TextStyle(fontSize: 13))),
+                    DropdownMenuItem(
+                        value: 150.0,
+                        child:
+                            Text('2.5 小时', style: TextStyle(fontSize: 13))),
+                    DropdownMenuItem(
+                        value: 180.0,
+                        child: Text('3 小时', style: TextStyle(fontSize: 13))),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setState(() => _sleepTimeoutMinutes = v);
+                  },
+                ),
+                const SizedBox(height: 4),
+                const Text('无操作达到设定时长后，宠物自动进入休眠。修改后无需重启，1 分钟内生效。',
                     style: TextStyle(fontSize: 11, color: Colors.black38)),
                 const Divider(height: 32),
                 Row(
