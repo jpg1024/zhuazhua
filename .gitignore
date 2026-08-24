@@ -50,3 +50,14 @@ app.*.map.json
 
 # 本机发布文件
 .deploy.md
+
+# 构建与打包产物
+/release/
+/zoo_desktop_pet_release.zip
+
+# 本地工具与工作数据
+.qwen/
+.workbuddy/
+
+# 去背景处理中间产物（最终素材在 assets/animals/）
+/assets/remove_background/
