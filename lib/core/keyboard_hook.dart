@@ -23,6 +23,14 @@ class KeyboardHookService {
   final _activityController = StreamController<bool>.broadcast();
   Stream<bool> get activityStream => _activityController.stream;
 
+  /// 全局快捷键 Ctrl+Alt+P 触发流（边沿触发，按住只发一次）。
+  final _hotkeyController = StreamController<void>.broadcast();
+  Stream<void> get hotkeyStream => _hotkeyController.stream;
+
+  /// 是否启用全局快捷键（设置页可关）。
+  bool hotkeyEnabled = true;
+  bool _hotkeyDown = false;
+
   // ── 打字速度检测 ──────────────────────────────────────────────────────────
   DateTime? _lastKeyTimestamp;
   double _typingSpeed = 0.0;
@@ -60,6 +68,16 @@ class KeyboardHookService {
   }
 
   void _pollKeys() {
+    // 全局快捷键：Ctrl(0x11) + Alt(0x12) + P(0x50) 同时按下，边沿触发
+    if (hotkeyEnabled) {
+      final ctrl = _getAsyncKeyState(0x11) & 0x8000 != 0;
+      final alt = _getAsyncKeyState(0x12) & 0x8000 != 0;
+      final p = _getAsyncKeyState(0x50) & 0x8000 != 0;
+      final combo = ctrl && alt && p;
+      if (combo && !_hotkeyDown) _hotkeyController.add(null);
+      _hotkeyDown = combo;
+    }
+
     // 检测常用键码范围：字母、数字、功能键、空格、标点等
     // VK_SPACE=0x20, VK_0..VK_9=0x30..0x39, VK_A..VK_Z=0x41..0x5A,
     // VK_F1..VK_F24=0x70..0x87, 标点 VK_OEM_*=0xBA..0xC0, 0xDB..0xDE
@@ -107,5 +125,6 @@ class KeyboardHookService {
     uninstall();
     _activityController.close();
     _typingSpeedController.close();
+    _hotkeyController.close();
   }
 }

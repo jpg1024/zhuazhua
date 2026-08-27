@@ -7,14 +7,24 @@ import '../ai/ai_client.dart';
 import '../core/animals.dart';
 import '../core/config.dart';
 import '../core/fa_icons.dart';
+import '../core/keyboard_hook.dart';
+import '../core/window_utils.dart';
 import '../growth/growth_service.dart';
+import '../pet/pet_controller.dart';
 import '../skin/skin_service.dart';
+import 'play_sections.dart';
 
 class SettingsPage extends StatefulWidget {
   final AppConfig config;
   final VoidCallback onClose;
+  final PetController pet;
 
-  const SettingsPage({super.key, required this.config, required this.onClose});
+  const SettingsPage({
+    super.key,
+    required this.config,
+    required this.onClose,
+    required this.pet,
+  });
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -30,6 +40,9 @@ class _SettingsPageState extends State<SettingsPage> {
   late double _scale;
   late String _patrolDirection;
   late double _sleepTimeoutMinutes;
+  late bool _edgeSnap;
+  late bool _hotkeyEnabled;
+  late bool _autoStart;
   String? _status;
   bool _testing = false;
   bool _skinBusy = false;
@@ -52,6 +65,9 @@ class _SettingsPageState extends State<SettingsPage> {
     _scale = cfg.petScale;
     _patrolDirection = cfg.patrolDirection;
     _sleepTimeoutMinutes = cfg.sleepTimeoutMinutes;
+    _edgeSnap = cfg.edgeSnap;
+    _hotkeyEnabled = cfg.hotkeyEnabled;
+    _autoStart = cfg.autoStart;
     _growthList = GrowthSnapshot.loadAll();
     _sortGrowth();
     if (_growthList.isNotEmpty) _selectedGrowthId = _growthList.first.animalId;
@@ -78,9 +94,16 @@ class _SettingsPageState extends State<SettingsPage> {
     cfg.petScale = _scale;
     cfg.patrolDirection = _patrolDirection;
     cfg.sleepTimeoutMinutes = _sleepTimeoutMinutes;
+    cfg.edgeSnap = _edgeSnap;
+    cfg.hotkeyEnabled = _hotkeyEnabled;
+    cfg.autoStart = _autoStart;
     cfg.save();
-    setState(() =>
-        _status = animalChanged ? '已保存。切换动物将在重启后生效。' : '已保存。');
+    // 快捷键与开机自启动立即生效
+    KeyboardHookService.instance.hotkeyEnabled = _hotkeyEnabled;
+    final autoStartOk = WindowUtils.instance.setAutoStart(_autoStart);
+    setState(() => _status = !autoStartOk
+        ? '已保存，但自启动写入注册表失败'
+        : (animalChanged ? '已保存。切换动物将在重启后生效。' : '已保存。'));
   }
 
   void _restart() {
@@ -595,6 +618,27 @@ class _SettingsPageState extends State<SettingsPage> {
                 const Text('无操作达到设定时长后，宠物自动进入休眠。修改后无需重启，1 分钟内生效。',
                     style: TextStyle(fontSize: 11, color: Colors.black38)),
                 const Divider(height: 32),
+                const Row(
+                  children: [
+                    Icon(Fa7.sliders, size: 14, color: Color(0xFF5C6BC0)),
+                    SizedBox(width: 8),
+                    Text('行为偏好',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _switchRow(Fa7.magnet, '贴边吸附', '拖动到屏幕边缘自动吸附，吸附后半透明、悬停恢复',
+                    _edgeSnap, (v) => setState(() => _edgeSnap = v)),
+                _switchRow(Fa7.keyboard, '全局快捷键 Ctrl+Alt+P', '任意界面下显示 / 隐藏宠物',
+                    _hotkeyEnabled, (v) => setState(() => _hotkeyEnabled = v)),
+                _switchRow(Fa7.powerOff, '开机自启动', '登录 Windows 后自动运行（写入注册表）',
+                    _autoStart, (v) => setState(() => _autoStart = v)),
+                const SizedBox(height: 4),
+                const Text('开关在点击「保存」后生效。',
+                    style: TextStyle(fontSize: 11, color: Colors.black38)),
+                const Divider(height: 32),
+                PlaySections(pet: widget.pet),
+                const Divider(height: 32),
                 Row(
                   children: [
                     const Icon(Fa7.robot, size: 14, color: Color(0xFF5C6BC0)),
@@ -656,8 +700,43 @@ class _SettingsPageState extends State<SettingsPage> {
         'assets/animals/$id.png',
         fit: BoxFit.contain,
         filterQuality: FilterQuality.medium,
-        errorBuilder: (_, __, ___) =>
+        errorBuilder: (_, _, _) =>
             Text(emoji, style: TextStyle(fontSize: size * 0.8)),
+      ),
+    );
+  }
+
+  Widget _switchRow(IconData icon, String title, String subtitle, bool value,
+      ValueChanged<bool> onChanged) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: const Color(0xFF5C6BC0).withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 13, color: const Color(0xFF5C6BC0)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600)),
+                Text(subtitle,
+                    style: const TextStyle(
+                        fontSize: 11, color: Colors.black45)),
+              ],
+            ),
+          ),
+          Switch(value: value, onChanged: onChanged),
+        ],
       ),
     );
   }

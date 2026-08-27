@@ -19,12 +19,16 @@ class PetPage extends StatefulWidget {
   final PetController controller;
   final VoidCallback onOpenSettings;
   final VoidCallback onExit;
+  final ValueChanged<bool>? onHoverChanged;
+  final VoidCallback? onDragStart;
 
   const PetPage({
     super.key,
     required this.controller,
     required this.onOpenSettings,
     required this.onExit,
+    this.onHoverChanged,
+    this.onDragStart,
   });
 
   @override
@@ -39,6 +43,8 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
   late final AnimationController _menu;
   late final AnimationController _spin;
   late final Animation<double> _spinCurve;
+  late final AnimationController _yawn;
+  late final AnimationController _feed;
 
   // Patrol animation controllers
   late final AnimationController _patrolFade;
@@ -72,6 +78,10 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
         vsync: this, duration: const Duration(milliseconds: 2000));
     _spinCurve =
         CurvedAnimation(parent: _spin, curve: Curves.easeInOutCubic);
+    _yawn = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1500));
+    _feed = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 900));
     _patrolFade = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 300));
     _patrolWave = AnimationController(
@@ -103,6 +113,19 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
     if (c.state == PetState.blink && _prev != PetState.blink) {
       _blink.forward(from: 0);
     }
+    if (c.state == PetState.eat && _prev != PetState.eat) {
+      _feed.forward(from: 0);
+      _bounce.forward(from: 0);
+    }
+    if (c.state == PetState.yawn && _prev != PetState.yawn) {
+      _yawn.forward(from: 0);
+    }
+    if (c.state == PetState.jump && _prev != PetState.jump) {
+      _bounce.forward(from: 0);
+    }
+    if (c.state == PetState.spin && _prev != PetState.spin) {
+      _spin.forward(from: 0);
+    }
     final sleeping = c.state == PetState.sleep;
     if (sleeping != _wasSleeping) {
       if (sleeping) {
@@ -133,17 +156,22 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
     _blink.dispose();
     _menu.dispose();
     _spin.dispose();
+    _yawn.dispose();
+    _feed.dispose();
     _patrolFade.dispose();
     _patrolWave.dispose();
     super.dispose();
   }
 
   static const double _menuWidth = 188;
-  static const double _menuHeight = 300;
+
+  /// 菜单实际最大高度（压缩后的菜单 ≈299px，留余量用于位置钳制）
+  static const double _menuHeight = 320;
 
   void _openMenu(Offset local) {
     const w = 280.0, h = 380.0;
     final dx = local.dx.clamp(8.0, w - _menuWidth - 8.0);
+    // 窗口高 380，菜单高 320：dy 上限为 52，保证 clamp 范围有效且菜单不越窗
     final dy = local.dy.clamp(8.0, h - _menuHeight - 8.0);
     setState(() {
       _menuPos = Offset(dx, dy);
@@ -166,8 +194,12 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
     switch (value) {
       case 'interact':
         c.interact();
+      case 'feed':
+        c.feed();
       case 'growth':
         c.toggleGrowthCard();
+      case 'pomodoro':
+        c.togglePomodoro();
       case 'zoomIn':
         c.adjustScale(0.2);
       case 'zoomOut':
@@ -275,7 +307,11 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
           mainAxisSize: MainAxisSize.min,
           children: [
             _menuTile('interact', Fa7.handPointer, '互动一下', color),
+            _menuTile('feed', Fa7.bone, '喂食', color),
             _menuTile('growth', Fa7.chartLine, '成长记录', color),
+            _menuDivider(color),
+            _menuTile('pomodoro', Fa7.stopwatch,
+                c.pomoRunning ? '停止番茄钟' : '番茄钟', color),
             _menuDivider(color),
             _menuTile('zoomIn', Fa7.magnifyingGlassPlus, '放大', color),
             _menuTile('zoomOut', Fa7.magnifyingGlassMinus, '缩小', color),
@@ -313,12 +349,12 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
         hoverColor: tint.withValues(alpha: 0.09),
         splashColor: tint.withValues(alpha: 0.16),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
           child: Row(
             children: [
               Container(
-                width: 28,
-                height: 28,
+                width: 24,
+                height: 24,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
@@ -330,12 +366,12 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
                   ),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(icon, size: 13, color: tint),
+                child: Icon(icon, size: 12, color: tint),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Text(label,
                   style: TextStyle(
-                      fontSize: 13.5,
+                      fontSize: 13,
                       fontWeight: FontWeight.w500,
                       color: danger ? tint : const Color(0xFF444444),
                       decoration: TextDecoration.none)),
@@ -395,6 +431,7 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
           child: RepaintBoundary(
             child: MouseRegion(
               onEnter: (_) {
+                widget.onHoverChanged?.call(true);
                 if (_hoverSpun ||
                     _spin.isAnimating ||
                     c.state == PetState.sleep) {
@@ -403,18 +440,24 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
                 _hoverSpun = true;
                 _spin.forward(from: 0);
               },
-              onExit: (_) => _hoverSpun = false,
+              onExit: (_) {
+                _hoverSpun = false;
+                widget.onHoverChanged?.call(false);
+              },
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: c.interact,
                 onDoubleTap: c.toggleGrowthCard,
-                onPanStart: (_) => windowManager.startDragging(),
+                onPanStart: (_) {
+                  widget.onDragStart?.call();
+                  windowManager.startDragging();
+                },
                 onSecondaryTapUp: (d) => _openMenu(d.localPosition),
                 child: AnimatedBuilder(
                   animation: Listenable.merge(
-                      [_breathCurve, _bounce, _blink, _spinCurve, _patrolFade, _patrolWave]),
+                      [_breathCurve, _bounce, _blink, _spinCurve, _yawn, _feed, _patrolFade, _patrolWave]),
                   child: ListenableBuilder(
-                    listenable: c,
+                    listenable: Listenable.merge([c, c.growth]),
                     builder: (context, _) => _PetVisual(
                         animal: animal,
                         skin: c.config.skinOf(animal.id),
@@ -437,6 +480,15 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
                             0.9 *
                                 Curves.easeInOut
                                     .transform((st - 0.35) / 0.65);
+                    // 打哈欠：先拉长（scaleY↑）再回落，附轻微侧倾
+                    final yawnWave = math.sin(math.pi * _yawn.value);
+                    final yawnScaleY = 1.0 + 0.07 * yawnWave;
+                    final yawnTilt = 0.06 * yawnWave;
+                    // 心情低落：idle 时无精打采地歪着
+                    final moodTilt =
+                        c.growth.mood < 40 && c.state == PetState.idle
+                            ? 0.10
+                            : 0.0;
 
                     // Patrol transforms
                     final isPatrol = _patrolPhase != 'idle';
@@ -475,13 +527,14 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
                       child: Transform.translate(
                         offset: Offset(0, bounceY + patrolBob),
                         child: Transform.rotate(
-                          angle: spinAngle + patrolTilt,
+                          angle: spinAngle + patrolTilt + yawnTilt + moodTilt,
                           child: Transform.scale(
                             scaleY: breathScale *
                                 squishY *
                                 stretch *
                                 spinShrink *
-                                wingFlap,
+                                wingFlap *
+                                yawnScaleY,
                             scaleX: squishX *
                                 (2 - stretch).clamp(0.9, 1.1) *
                                 spinShrink,
@@ -507,6 +560,68 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
                   right: 52,
                   child: Text('💤', style: TextStyle(fontSize: 22)))
               : const Positioned(bottom: 0, child: SizedBox.shrink()),
+        ),
+        // 喂食：动物专属食物从头顶落下
+        ListenableBuilder(
+          listenable: c,
+          builder: (context, _) => c.state == PetState.eat
+              ? Positioned(
+                  bottom: 8 + 96 * c.petScale + 14,
+                  child: AnimatedBuilder(
+                    animation: _feed,
+                    builder: (context, _) {
+                      final v =
+                          Curves.easeIn.transform(_feed.value.clamp(0.0, 1.0));
+                      return Opacity(
+                        opacity: (1 - v * 0.6).clamp(0.0, 1.0),
+                        child: Transform.translate(
+                          offset: Offset(0, -46 * (1 - v)),
+                          child: Text(c.feedingFood,
+                              style: const TextStyle(fontSize: 26)),
+                        ),
+                      );
+                    },
+                  ),
+                )
+              : const Positioned(bottom: 0, child: SizedBox.shrink()),
+        ),
+        // 番茄钟倒计时 chip
+        ListenableBuilder(
+          listenable: c,
+          builder: (context, _) {
+            if (!c.pomoRunning) {
+              return const Positioned(bottom: 0, child: SizedBox.shrink());
+            }
+            final m = c.pomoRemaining ~/ 60;
+            final s = c.pomoRemaining % 60;
+            final focus = c.pomoPhase == PomoPhase.focus;
+            final color = focus ? const Color(0xFFE5534B) : const Color(0xFF4CAF50);
+            return Positioned(
+              top: 8,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(99),
+                  boxShadow: [
+                    BoxShadow(
+                        color: color.withValues(alpha: 0.25),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4)),
+                  ],
+                ),
+                child: Text(
+                  '${focus ? '🍅' : '☕'} $m:${s.toString().padLeft(2, '0')}',
+                  style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF4A4A4A),
+                      decoration: TextDecoration.none),
+                ),
+              ),
+            );
+          },
         ),
         if (_menuOpen) ...[
           Positioned.fill(
@@ -788,6 +903,7 @@ class _GrowthCard extends StatelessWidget {
                     '${_moodEmoji(growth.mood)} ${growth.mood}/100', color),
                 _row(Fa7.handPointer, '互动次数', '${growth.totalInteractions}',
                     color),
+                _row(Fa7.bone, '喂食次数', '${growth.totalFeedings}', color),
                 _row(Fa7.clock, '陪伴时长', '$hours小时$mins分钟', color),
                 _row(Fa7.calendarDays, '相识天数', '$days天', color),
               ],

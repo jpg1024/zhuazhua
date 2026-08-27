@@ -9,6 +9,8 @@ import 'package:window_manager/window_manager.dart';
 
 import 'core/animals.dart';
 import 'core/config.dart';
+import 'core/keyboard_hook.dart';
+import 'core/window_utils.dart';
 import 'growth/growth_service.dart';
 import 'pet/pet_controller.dart';
 import 'pet/pet_page.dart';
@@ -95,6 +97,7 @@ class _AppShellState extends State<AppShell>
   AppMode mode = AppMode.pet;
   Timer? _posSaveTimer;
   bool _visible = true;
+  bool _snappedEdge = false;
 
   @override
   void initState() {
@@ -105,6 +108,12 @@ class _AppShellState extends State<AppShell>
     windowManager.addListener(this);
     trayManager.addListener(this);
     _initTray(animal);
+
+    // 全局快捷键 Ctrl+Alt+P 显示/隐藏（宠物模式下生效）
+    KeyboardHookService.instance.hotkeyEnabled = appConfig.hotkeyEnabled;
+    KeyboardHookService.instance.hotkeyStream.listen((_) {
+      if (mode == AppMode.pet) _toggleVisible();
+    });
   }
 
   Future<void> _initTray(AnimalInfo animal) async {
@@ -157,7 +166,55 @@ class _AppShellState extends State<AppShell>
       appConfig.windowX = pos.dx;
       appConfig.windowY = pos.dy;
       appConfig.save();
+      await _applyEdgeSnap();
     });
+  }
+
+  /// 贴边吸附：距屏幕工作区边缘 40px 内自动吸附，吸附后半透明（悬停恢复）。
+  Future<void> _applyEdgeSnap() async {
+    if (!appConfig.edgeSnap) return;
+    final area = WindowUtils.instance.workArea();
+    if (area == null) return;
+    final pos = await windowManager.getPosition();
+    final size = await windowManager.getSize();
+    const threshold = 40.0;
+    var x = pos.dx;
+    var y = pos.dy;
+    var snapped = false;
+    if ((pos.dx - area.left).abs() < threshold) {
+      x = area.left.toDouble();
+      snapped = true;
+    } else if ((area.right - (pos.dx + size.width)).abs() < threshold) {
+      x = (area.right - size.width).toDouble();
+      snapped = true;
+    }
+    if ((pos.dy - area.top).abs() < threshold) {
+      y = area.top.toDouble();
+      snapped = true;
+    } else if ((area.bottom - (pos.dy + size.height)).abs() < threshold) {
+      y = (area.bottom - size.height).toDouble();
+      snapped = true;
+    }
+    if (snapped && (x != pos.dx || y != pos.dy)) {
+      await windowManager.setPosition(Offset(x, y));
+    }
+    if (snapped != _snappedEdge) {
+      _snappedEdge = snapped;
+      await windowManager.setOpacity(snapped ? 0.6 : 1.0);
+    }
+  }
+
+  /// 宠物悬停：吸附状态下恢复不透明，移开后回到半透明。
+  void _onPetHover(bool hovering) {
+    if (!_snappedEdge) return;
+    windowManager.setOpacity(hovering ? 1.0 : 0.6);
+  }
+
+  /// 开始拖动：解除吸附并恢复不透明。
+  void _onPetDragStart() {
+    if (!_snappedEdge) return;
+    _snappedEdge = false;
+    windowManager.setOpacity(1.0);
   }
 
   Future<void> _openSettings() async {
@@ -204,10 +261,13 @@ class _AppShellState extends State<AppShell>
                 controller: pet,
                 onOpenSettings: _openSettings,
                 onExit: _exit,
+                onHoverChanged: _onPetHover,
+                onDragStart: _onPetDragStart,
               )
             : Padding(
                 padding: const EdgeInsets.all(8),
-                child: SettingsPage(config: appConfig, onClose: _closeSettings),
+                child: SettingsPage(
+                    config: appConfig, onClose: _closeSettings, pet: pet),
               ),
       ),
     );

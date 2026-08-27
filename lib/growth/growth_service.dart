@@ -33,6 +33,7 @@ class GrowthSnapshot {
   final int mood;
   final int totalInteractions;
   final int totalOnlineMinutes;
+  final int totalFeedings;
   final DateTime lastActiveAt;
 
   GrowthSnapshot({
@@ -43,6 +44,7 @@ class GrowthSnapshot {
     required this.mood,
     required this.totalInteractions,
     required this.totalOnlineMinutes,
+    required this.totalFeedings,
     required this.lastActiveAt,
   });
 
@@ -57,6 +59,7 @@ class GrowthSnapshot {
       mood: j['mood'] ?? 80,
       totalInteractions: j['totalInteractions'] ?? 0,
       totalOnlineMinutes: j['totalOnlineMinutes'] ?? 0,
+      totalFeedings: j['totalFeedings'] ?? 0,
       lastActiveAt: DateTime.tryParse(j['lastActiveAt'] ?? '') ?? DateTime.now(),
     );
   }
@@ -90,11 +93,13 @@ class GrowthService extends ChangeNotifier {
   int mood = 80;
   int totalInteractions = 0;
   int totalOnlineMinutes = 0;
+  int totalFeedings = 0;
   DateTime lastActiveAt = DateTime.now();
   List<GrowthEvent> events = [];
 
   Timer? _minuteTimer;
   DateTime _lastInteractExp = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastFeedExp = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _lastInteraction = DateTime.now();
 
   int get expToNext => 100 * level;
@@ -116,6 +121,7 @@ class GrowthService extends ChangeNotifier {
         mood = j['mood'] ?? 80;
         totalInteractions = j['totalInteractions'] ?? 0;
         totalOnlineMinutes = j['totalOnlineMinutes'] ?? 0;
+        totalFeedings = j['totalFeedings'] ?? 0;
         lastActiveAt = DateTime.tryParse(j['lastActiveAt'] ?? '') ?? DateTime.now();
         events = ((j['events'] as List?) ?? [])
             .map((e) => GrowthEvent.fromJson(e as Map<String, dynamic>))
@@ -138,6 +144,7 @@ class GrowthService extends ChangeNotifier {
         'mood': mood,
         'totalInteractions': totalInteractions,
         'totalOnlineMinutes': totalOnlineMinutes,
+        'totalFeedings': totalFeedings,
         'lastActiveAt': lastActiveAt.toIso8601String(),
         'events': events.map((e) => e.toJson()).toList(),
       }));
@@ -177,6 +184,35 @@ class GrowthService extends ChangeNotifier {
     save();
     notifyListeners();
     return leveled;
+  }
+
+  /// 喂食：心情 +10；经验 60 秒冷却 +1。返回是否因此升级。
+  bool feed() {
+    totalFeedings++;
+    _lastInteraction = DateTime.now();
+    mood = (mood + 10).clamp(0, 100);
+    var leveled = false;
+    if (DateTime.now().difference(_lastFeedExp).inSeconds >= 60) {
+      _lastFeedExp = DateTime.now();
+      leveled = _gainExp(1);
+    }
+    save();
+    notifyListeners();
+    return leveled;
+  }
+
+  /// 直接奖励经验（每日任务/番茄钟用），返回是否因此升级。
+  bool grantExp(int amount) {
+    final leveled = _gainExp(amount);
+    save();
+    notifyListeners();
+    return leveled;
+  }
+
+  void boostMood(int amount) {
+    mood = (mood + amount).clamp(0, 100);
+    save();
+    notifyListeners();
   }
 
   bool _gainExp(int amount) {

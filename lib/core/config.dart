@@ -18,6 +18,10 @@ class AppPaths {
 
   static File get configFile => File('${root.path}\\config.json');
 
+  static File get achievementsFile => File('${root.path}\\achievements.json');
+
+  static File get dailyTasksFile => File('${root.path}\\daily_tasks.json');
+
   static Directory skinDir(String animalId) {
     final dir = Directory('${root.path}\\skins\\$animalId');
     if (!dir.existsSync()) dir.createSync(recursive: true);
@@ -90,6 +94,15 @@ class AppConfig {
   /// 无操作达到该时长（分钟）后宠物自动进入休眠，默认 60 分钟
   double sleepTimeoutMinutes;
 
+  /// 拖动后自动吸附屏幕边缘（吸附后宠物半透明，悬停恢复）
+  bool edgeSnap;
+
+  /// 全局快捷键 Ctrl+Alt+P 显示/隐藏宠物
+  bool hotkeyEnabled;
+
+  /// 开机自启动（写入 HKCU Run 注册表）
+  bool autoStart;
+
   AppConfig({
     this.animalId = 'cat',
     AiConfig? ai,
@@ -99,6 +112,9 @@ class AppConfig {
     Map<String, AnimalSkin>? skins,
     this.patrolDirection = 'left',
     this.sleepTimeoutMinutes = 60,
+    this.edgeSnap = true,
+    this.hotkeyEnabled = true,
+    this.autoStart = false,
   })  : ai = ai ?? AiConfig(),
         skins = skins ?? {};
 
@@ -120,6 +136,9 @@ class AppConfig {
           patrolDirection: j['patrolDirection'] ?? 'left',
           sleepTimeoutMinutes:
               (j['sleepTimeoutMinutes'] as num?)?.toDouble() ?? 60,
+          edgeSnap: j['edgeSnap'] ?? true,
+          hotkeyEnabled: j['hotkeyEnabled'] ?? true,
+          autoStart: j['autoStart'] ?? false,
           skins: skinsJson.map((k, v) =>
               MapEntry(k, AnimalSkin.fromJson(v as Map<String, dynamic>))),
         );
@@ -139,6 +158,9 @@ class AppConfig {
         'petScale': petScale,
         'patrolDirection': patrolDirection,
         'sleepTimeoutMinutes': sleepTimeoutMinutes,
+        'edgeSnap': edgeSnap,
+        'hotkeyEnabled': hotkeyEnabled,
+        'autoStart': autoStart,
         'skins': {
           for (final e in skins.entries)
             if (!e.value.isEmpty) e.key: e.value.toJson()

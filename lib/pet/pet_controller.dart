@@ -4,23 +4,32 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../ai/ai_client.dart';
+import '../core/achievements.dart';
 import '../core/animals.dart';
 import '../core/config.dart';
+import '../core/daily_tasks.dart';
 import '../core/keyboard_hook.dart';
 import '../growth/growth_service.dart';
 
-enum PetState { idle, blink, happy, sleep, patrol }
+enum PetState { idle, blink, happy, sleep, patrol, eat, yawn, jump, spin }
+
+enum PomoPhase { none, focus, breakTime }
 
 class PetController extends ChangeNotifier {
   final AnimalInfo animal;
   final GrowthService growth;
   final AiClient ai;
   final AppConfig config;
+  final AchievementsService achievements = AchievementsService();
+  final DailyTaskService daily = DailyTaskService();
   final _rand = Random();
 
   PetState state = PetState.idle;
   String? bubbleText;
   bool showGrowthCard = false;
+
+  /// 本次喂食的食物 emoji（供 UI 掉落动画与气泡使用）
+  String feedingFood = '🍖';
 
   Timer? _blinkTimer;
   Timer? _bubbleTimer;
@@ -29,7 +38,19 @@ class PetController extends ChangeNotifier {
   Timer? _growthCardTimer;
   Timer? _patrolDebounce;
   Timer? _patrolStopTimer;
+  Timer? _actionTimer;
+  Timer? _actionStopTimer;
+  Timer? _greetTimer;
+  Timer? _pomoTimer;
   DateTime _lastInteraction = DateTime.now();
+  int _lastSeenOnline = 0;
+
+  PomoPhase pomoPhase = PomoPhase.none;
+  int pomoRemaining = 0;
+  static const int pomoFocusSeconds = 25 * 60;
+  static const int pomoBreakSeconds = 5 * 60;
+
+  bool get pomoRunning => pomoPhase != PomoPhase.none;
 
   /// 本次巡逻的实际方向（'left' 或 'right'），由 resolvePatrolDirection() 决定
   String patrolActualDirection = 'left';
@@ -53,7 +74,54 @@ class PetController extends ChangeNotifier {
     });
     _scheduleTip();
     _initKeyboardHook();
+    _lastSeenOnline = growth.totalOnlineMinutes;
+    growth.addListener(_onGrowthTick);
+    _checkAchievements();
+    _scheduleGreet();
+    _scheduleRandomAction();
   }
+
+  // ── 每日任务 / 成就编排 ──────────────────────────────────────────────────
+
+  void _onGrowthTick() {
+    if (growth.totalOnlineMinutes == _lastSeenOnline) return;
+    _lastSeenOnline = growth.totalOnlineMinutes;
+    final done = daily.add('accompany');
+    if (done != null) _applyTaskReward(done);
+    _checkAchievements();
+  }
+
+  void _applyTaskReward(DailyTaskDef def) {
+    if (state == PetState.sleep) {
+      state = PetState.idle;
+      notifyListeners();
+    }
+    if (def.rewardExp > 0) {
+      final leveled = growth.grantExp(def.rewardExp);
+      showBubble(
+          leveled
+              ? '每日任务「${def.name}」完成！经验+${def.rewardExp}，还升级啦！'
+              : '每日任务「${def.name}」完成！经验+${def.rewardExp} 🎉',
+          seconds: 6);
+    } else if (def.rewardMood > 0) {
+      growth.boostMood(def.rewardMood);
+      showBubble('每日任务「${def.name}」完成！心情+${def.rewardMood} 🎉',
+          seconds: 6);
+    }
+  }
+
+  void _checkAchievements() {
+    final stats = AchievementsService.aggregate(
+        GrowthSnapshot.loadAll(), achievements.pomodoros);
+    final newly = achievements.checkAll(stats);
+    for (final a in newly) {
+      showBubble('🏆 解锁成就「${a.name}」！', seconds: 6);
+      growth.addEvent('achievement', '解锁成就「${a.name}」');
+      growth.save();
+    }
+  }
+
+  // ── 键盘巡逻 ─────────────────────────────────────────────────────────────
 
   void _initKeyboardHook() {
     final hook = KeyboardHookService.instance;
@@ -126,7 +194,164 @@ class PetController extends ChangeNotifier {
     _patrolStopTimer = Timer(const Duration(seconds: 2), () {});
   }
 
+  // ── 随机小动作 ───────────────────────────────────────────────────────────
+
+  void _scheduleRandomAction() {
+    _actionTimer = Timer(Duration(seconds: 20 + _rand.nextInt(26)), () {
+      if (state == PetState.idle && !pomoRunning) {
+        _startRandomAction();
+      }
+      _scheduleRandomAction();
+    });
+  }
+
+  void _startRandomAction() {
+    final r = _rand.nextDouble();
+    final PetState next;
+    final int durationMs;
+    if (r < 0.4) {
+      next = PetState.yawn;
+      durationMs = 1500;
+    } else if (r < 0.7) {
+      next = PetState.jump;
+      durationMs = 700;
+    } else {
+      next = PetState.spin;
+      durationMs = 2400;
+    }
+    state = next;
+    notifyListeners();
+    _actionStopTimer?.cancel();
+    _actionStopTimer = Timer(Duration(milliseconds: durationMs), () {
+      if (state == next) {
+        state = PetState.idle;
+        notifyListeners();
+      }
+    });
+  }
+
+  // ── 时间感知问候（无需 AI） ──────────────────────────────────────────────
+
+  void _scheduleGreet() {
+    _greetTimer = Timer(Duration(minutes: 35 + _rand.nextInt(31)), () {
+      if (state == PetState.idle && !pomoRunning) {
+        showBubble(_timePhrase(), seconds: 6);
+        growth.addEvent('greet', '主动问候');
+        growth.save();
+      }
+      _scheduleGreet();
+    });
+  }
+
+  String _timePhrase() {
+    final now = DateTime.now();
+    final hour = now.hour;
+    final weekend = now.weekday >= DateTime.saturday;
+    const weekendPool = [
+      '周末啦，出去晒晒太阳吧～',
+      '休息日也要好好放松哦！',
+      '周末愉快，主人陪我玩会儿嘛～',
+    ];
+    const morningPool = [
+      '早安！新的一天也要元气满满～',
+      '早上好，先喝杯水提提神吧！',
+    ];
+    const workingPool = [
+      '工作加油，我就在旁边陪着你～',
+      '专心工作啦，忙完记得摸摸我！',
+      '你认真的样子最好看啦～',
+    ];
+    const lunchPool = [
+      '到饭点啦，快去吃饭，别饿着！',
+      '午饭时间到！吃饱才有力气继续呀～',
+    ];
+    const afternoonPool = [
+      '下午容易犯困，起来伸个懒腰吧～',
+      '要不要来杯咖啡？我帮你盯着屏幕！',
+    ];
+    const eveningPool = [
+      '天快黑啦，早点收工回家吧～',
+      '辛苦一天了，晚饭想吃点什么呀？',
+    ];
+    const nightPool = [
+      '夜深了，早点休息，别熬夜啦～',
+      '月亮都出来了，主人该睡觉啦！',
+    ];
+    if (weekend) return weekendPool[_rand.nextInt(weekendPool.length)];
+    if (hour >= 5 && hour < 9) return morningPool[_rand.nextInt(morningPool.length)];
+    if (hour >= 9 && hour < 12) return workingPool[_rand.nextInt(workingPool.length)];
+    if (hour >= 12 && hour < 14) return lunchPool[_rand.nextInt(lunchPool.length)];
+    if (hour >= 14 && hour < 18) return afternoonPool[_rand.nextInt(afternoonPool.length)];
+    if (hour >= 18 && hour < 23) return eveningPool[_rand.nextInt(eveningPool.length)];
+    return nightPool[_rand.nextInt(nightPool.length)];
+  }
+
+  // ── 番茄钟 ───────────────────────────────────────────────────────────────
+
+  void togglePomodoro() {
+    if (pomoRunning) {
+      _stopPomodoro();
+    } else {
+      _startPomodoro();
+    }
+  }
+
+  void _startPomodoro() {
+    pomoPhase = PomoPhase.focus;
+    pomoRemaining = pomoFocusSeconds;
+    showBubble('开始专注！🍅 25 分钟后叫你休息', seconds: 5);
+    _pomoTimer?.cancel();
+    _pomoTimer = Timer.periodic(const Duration(seconds: 1), (_) => _pomoTick());
+    notifyListeners();
+  }
+
+  void _stopPomodoro() {
+    pomoPhase = PomoPhase.none;
+    pomoRemaining = 0;
+    _pomoTimer?.cancel();
+    _pomoTimer = null;
+    showBubble('番茄钟已停止，休息一下吧～', seconds: 5);
+    notifyListeners();
+  }
+
+  void _pomoTick() {
+    pomoRemaining--;
+    if (pomoRemaining > 0) {
+      notifyListeners();
+      return;
+    }
+    if (pomoPhase == PomoPhase.focus) {
+      pomoPhase = PomoPhase.breakTime;
+      pomoRemaining = pomoBreakSeconds;
+      showBubble('专注结束！休息 5 分钟吧 ☕', seconds: 6);
+      growth.addEvent('pomodoro', '完成一个专注时段');
+      growth.save();
+    } else {
+      pomoPhase = PomoPhase.none;
+      _pomoTimer?.cancel();
+      _pomoTimer = null;
+      achievements.pomodoros++;
+      achievements.save();
+      final leveled = growth.grantExp(3);
+      final done = daily.add('pomodoro');
+      if (done != null) _applyTaskReward(done);
+      showBubble(leveled ? '番茄钟完成！经验+3，升级啦！🎉' : '番茄钟完成！经验+3 🎉',
+          seconds: 6);
+      _checkAchievements();
+    }
+    notifyListeners();
+  }
+
+  // ── 台词与互动 ───────────────────────────────────────────────────────────
+
   List<String> get _phrases => phrasesFor(animal);
+
+  static const List<String> _sadPhrases = [
+    '最近有点孤单呢…多陪陪我嘛',
+    '心情不太好，摸摸我好不好…',
+    '你怎么不理我呀…',
+    '陪陪我嘛，一小会儿就好…',
+  ];
 
   void _scheduleBlink() {
     _blinkTimer = Timer(Duration(seconds: 4 + _rand.nextInt(5)), () {
@@ -193,12 +418,18 @@ class PetController extends ChangeNotifier {
     });
 
     final leveled = growth.interact();
+    final done = daily.add('interact');
+    if (done != null) _applyTaskReward(done);
     if (leveled) {
       showBubble('哇！升级啦，现在是 Lv.${growth.level}！', seconds: 6);
       return;
     }
     if (wasSleeping) {
       showBubble('呼啊…被你叫醒了，${animal.name}睡得正香呢～');
+      return;
+    }
+    if (growth.mood < 40) {
+      showBubble(_sadPhrases[_rand.nextInt(_sadPhrases.length)]);
       return;
     }
 
@@ -212,6 +443,34 @@ class PetController extends ChangeNotifier {
     } else {
       showBubble(_phrases[_rand.nextInt(_phrases.length)]);
     }
+  }
+
+  Future<void> feed() async {
+    _lastInteraction = DateTime.now();
+    final wasSleeping = state == PetState.sleep;
+    feedingFood = animal.foods[_rand.nextInt(animal.foods.length)];
+    state = PetState.eat;
+    notifyListeners();
+    Timer(const Duration(milliseconds: 1600), () {
+      if (state == PetState.eat) {
+        state = PetState.idle;
+        notifyListeners();
+      }
+    });
+
+    final leveled = growth.feed();
+    final done = daily.add('feed');
+    if (done != null) _applyTaskReward(done);
+    if (leveled) {
+      showBubble('好吃！还升级啦，现在是 Lv.${growth.level}！', seconds: 6);
+      return;
+    }
+    if (wasSleeping) {
+      showBubble('闻到香味就醒啦～${animal.name}开动！');
+      return;
+    }
+    showBubble('啊呜～$feedingFood真好吃！');
+    _checkAchievements();
   }
 
   void toggleGrowthCard() {
@@ -243,6 +502,7 @@ class PetController extends ChangeNotifier {
 
   @override
   void dispose() {
+    growth.removeListener(_onGrowthTick);
     _blinkTimer?.cancel();
     _bubbleTimer?.cancel();
     _sleepTimer?.cancel();
@@ -250,6 +510,10 @@ class PetController extends ChangeNotifier {
     _growthCardTimer?.cancel();
     _patrolDebounce?.cancel();
     _patrolStopTimer?.cancel();
+    _actionTimer?.cancel();
+    _actionStopTimer?.cancel();
+    _greetTimer?.cancel();
+    _pomoTimer?.cancel();
     KeyboardHookService.instance.dispose();
     super.dispose();
   }
