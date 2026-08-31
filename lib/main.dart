@@ -53,13 +53,21 @@ Future<void> main() async {
 
   runApp(const ZooPetApp());
 
-  // 首帧渲染完成后再显示窗口，并做一次不可见的尺寸微调强制 DWM 重新合成；
-  // 否则首次启动窗口不接收鼠标输入（托盘切换/打开设置同样通过窗口状态变化“治好”它）
+  // 首帧渲染完成后再显示窗口，并做几次不可见的尺寸微调强制 DWM 重新合成；
+  // 否则首次启动窗口不接收鼠标输入（托盘切换/打开设置同样通过窗口状态变化“治好”它）。
+  // 开机自启动时系统登录早期 DWM 未就绪，单次微调可能不生效，故多阶段延时重试。
   WidgetsBinding.instance.addPostFrameCallback((_) async {
     await windowManager.show();
-    await windowManager.setSize(
-        Size(kPetWindowSize.width + 1, kPetWindowSize.height + 1));
-    await windowManager.setSize(kPetWindowSize);
+    Future<void> nudge() async {
+      await windowManager.setSize(
+          Size(kPetWindowSize.width + 1, kPetWindowSize.height + 1));
+      await windowManager.setSize(kPetWindowSize);
+    }
+
+    await nudge();
+    Future.delayed(const Duration(milliseconds: 300), nudge);
+    Future.delayed(const Duration(seconds: 1), nudge);
+    Future.delayed(const Duration(seconds: 3), nudge);
   });
 }
 
