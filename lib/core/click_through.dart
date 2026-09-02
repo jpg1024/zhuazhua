@@ -58,7 +58,6 @@ class ClickThroughService {
 
   int _hwnd = 0;
   Timer? _timer;
-  bool? _transparent;
 
   /// 宠物可交互矩形（窗口内逻辑坐标）。
   Rect Function()? hitRectProvider;
@@ -121,13 +120,15 @@ class ClickThroughService {
   }
 
   void _setTransparent(bool value) {
-    if (!Platform.isWindows || _windowHandle == 0 || _transparent == value) {
-      return;
-    }
+    if (!Platform.isWindows || _windowHandle == 0) return;
+    // 自愈：每次强制对比窗口实际扩展样式，不依赖缓存短路。
+    // 窗口被 DWM 重建/外部操作清除样式后，缓存与真实状态脱节会导致
+    // 整窗永久点击穿透（无法拖动/右键无反应），此处 100ms 轮询内自动纠正。
     final style = _getWindowLongPtr(_hwnd, _gwlExStyle);
-    final next =
-        value ? style | _wsExTransparent : style & ~_wsExTransparent;
-    if (next != style) _setWindowLongPtr(_hwnd, _gwlExStyle, next);
-    _transparent = value;
+    final has = (style & _wsExTransparent) != 0;
+    if (has != value) {
+      _setWindowLongPtr(_hwnd, _gwlExStyle,
+          value ? style | _wsExTransparent : style & ~_wsExTransparent);
+    }
   }
 }
