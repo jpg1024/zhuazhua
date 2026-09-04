@@ -82,7 +82,49 @@ class _SettingsPageState extends State<SettingsPage> {
     super.dispose();
   }
 
-  void _save() {
+  /// AI 开启且 baseUrl 为非本地 http:// → API Key 将明文传输。
+  bool get _unsafeHttpAi => _aiEnabled && _isUnsafeHttpUrl(_baseUrl.text);
+
+  static bool _isUnsafeHttpUrl(String url) {
+    final u = Uri.tryParse(url.trim());
+    if (u == null || u.scheme != 'http') return false;
+    final host = u.host.toLowerCase();
+    return host != 'localhost' &&
+        host != '127.0.0.1' &&
+        host != '[::1]' &&
+        host != '::1';
+  }
+
+  Future<bool> _confirmUnsafeHttp() async {
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('不安全的连接地址', style: TextStyle(fontSize: 16)),
+        content: const Text(
+            'AI 地址使用了 http://（非本地地址），API Key 将以明文传输，可能被网络中间人截获。\n\n'
+            '建议改用 https:// 地址；本地服务（localhost / 127.0.0.1）不受影响。',
+            style: TextStyle(fontSize: 13)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('仍要保存')),
+        ],
+      ),
+    );
+    return proceed == true;
+  }
+
+  /// 保存配置；返回 false 表示用户取消了保存（不安全地址确认框）。
+  Future<bool> _save() async {
+    if (_unsafeHttpAi && !await _confirmUnsafeHttp()) {
+      if (mounted) {
+        setState(() => _status = '已取消保存：请改用 https:// 或本地地址');
+      }
+      return false;
+    }
     final animalChanged = _animalId != cfg.animalId;
     cfg.animalId = _animalId;
     cfg.ai
@@ -101,13 +143,17 @@ class _SettingsPageState extends State<SettingsPage> {
     // 快捷键与开机自启动立即生效
     KeyboardHookService.instance.hotkeyEnabled = _hotkeyEnabled;
     final autoStartOk = WindowUtils.instance.setAutoStart(_autoStart);
-    setState(() => _status = !autoStartOk
-        ? '已保存，但自启动写入注册表失败'
-        : (animalChanged ? '已保存。切换动物将在重启后生效。' : '已保存。'));
+    if (mounted) {
+      setState(() => _status = !autoStartOk
+          ? '已保存，但自启动写入注册表失败'
+          : (animalChanged ? '已保存。切换动物将在重启后生效。' : '已保存。'));
+    }
+    return true;
   }
 
-  void _restart() {
-    _save();
+  Future<void> _restart() async {
+    final saved = await _save();
+    if (!saved) return;
     Process.start(Platform.resolvedExecutable, [], mode: ProcessStartMode.detached);
     exit(0);
   }

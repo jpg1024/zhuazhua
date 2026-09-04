@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'dpapi.dart';
+
 class AppPaths {
   static Directory get root {
     final appData = Platform.environment['APPDATA'] ??
@@ -55,6 +57,9 @@ class AiConfig {
   bool enabled;
   int tipIntervalMinutes;
 
+  /// 落盘密文前缀：无前缀视为旧版明文，读取兼容、下次保存自动迁移为密文。
+  static const String _cipherPrefix = 'dpapi:';
+
   AiConfig({
     this.baseUrl = '',
     this.apiKey = '',
@@ -65,7 +70,7 @@ class AiConfig {
 
   factory AiConfig.fromJson(Map<String, dynamic> j) => AiConfig(
         baseUrl: j['baseUrl'] ?? '',
-        apiKey: j['apiKey'] ?? '',
+        apiKey: _decryptKey(j['apiKey'] ?? ''),
         model: j['model'] ?? '',
         enabled: j['enabled'] ?? false,
         tipIntervalMinutes: j['tipIntervalMinutes'] ?? 45,
@@ -73,11 +78,23 @@ class AiConfig {
 
   Map<String, dynamic> toJson() => {
         'baseUrl': baseUrl,
-        'apiKey': apiKey,
+        'apiKey': _encryptKey(apiKey),
         'model': model,
         'enabled': enabled,
         'tipIntervalMinutes': tipIntervalMinutes,
       };
+
+  static String _encryptKey(String key) {
+    if (key.isEmpty) return '';
+    final cipher = Dpapi.protect(key);
+    return cipher == null ? key : '$_cipherPrefix$cipher';
+  }
+
+  static String _decryptKey(String stored) {
+    if (stored.isEmpty) return '';
+    if (!stored.startsWith(_cipherPrefix)) return stored;
+    return Dpapi.unprotect(stored.substring(_cipherPrefix.length)) ?? '';
+  }
 }
 
 class AppConfig {

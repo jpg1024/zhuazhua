@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart' as acrylic;
@@ -27,10 +26,6 @@ Future<void> main() async {
   await acrylic.Window.initialize();
 
   appConfig = AppConfig.load();
-  final candidates =
-      kAnimals.where((a) => a.id != appConfig.animalId).toList();
-  appConfig.animalId = candidates[Random().nextInt(candidates.length)].id;
-  appConfig.save();
 
   const options = WindowOptions(
     size: kPetWindowSize,
