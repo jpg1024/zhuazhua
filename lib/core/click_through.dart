@@ -36,10 +36,19 @@ class ClickThroughService {
   static const _lwaAlpha = 0x2;
 
   final _user32 = Platform.isWindows ? DynamicLibrary.open('user32.dll') : null;
+  final _kernel32 =
+      Platform.isWindows ? DynamicLibrary.open('kernel32.dll') : null;
 
-  late final _findWindow = _user32!.lookupFunction<
-      IntPtr Function(Pointer<Utf16>, Pointer<Utf16>),
-      int Function(Pointer<Utf16>, Pointer<Utf16>)>('FindWindowW');
+  late final _findWindowEx = _user32!.lookupFunction<
+      IntPtr Function(IntPtr, IntPtr, Pointer<Utf16>, Pointer<Utf16>),
+      int Function(
+          int, int, Pointer<Utf16>, Pointer<Utf16>)>('FindWindowExW');
+  late final _getWindowThreadProcessId = _user32!.lookupFunction<
+      Uint32 Function(IntPtr, Pointer<Uint32>),
+      int Function(int, Pointer<Uint32>)>('GetWindowThreadProcessId');
+  late final _getCurrentProcessId =
+      _kernel32!.lookupFunction<Uint32 Function(), int Function()>(
+          'GetCurrentProcessId');
   late final _getCursorPos = _user32!.lookupFunction<
       Int32 Function(Pointer<_Point>),
       int Function(Pointer<_Point>)>('GetCursorPos');
@@ -70,9 +79,7 @@ class ClickThroughService {
 
   int get _windowHandle {
     if (_hwnd == 0) {
-      final title = '爪爪'.toNativeUtf16();
-      _hwnd = _findWindow(nullptr, title);
-      calloc.free(title);
+      _hwnd = _findOwnWindowByTitle('爪爪');
       if (_hwnd != 0) {
         // 保证 WS_EX_LAYERED 存在，否则 WS_EX_TRANSPARENT 不生效
         final style = _getWindowLongPtr(_hwnd, _gwlExStyle);
@@ -83,6 +90,32 @@ class ClickThroughService {
       }
     }
     return _hwnd;
+  }
+
+  /// 遍历同标题顶层窗口，只认本进程的那个。
+  /// 标题可能被其他进程占用：绝不对外进程窗口设置扩展样式。
+  int _findOwnWindowByTitle(String title) {
+    final nativeTitle = title.toNativeUtf16();
+    try {
+      final selfPid = _getCurrentProcessId();
+      final pidBuf = calloc<Uint32>();
+      try {
+        var prev = 0;
+        // 防御性上限，避免异常情况下无限遍历
+        for (var i = 0; i < 32; i++) {
+          final hwnd = _findWindowEx(0, prev, nullptr, nativeTitle);
+          if (hwnd == 0) break;
+          _getWindowThreadProcessId(hwnd, pidBuf);
+          if (pidBuf.value == selfPid) return hwnd;
+          prev = hwnd;
+        }
+        return 0;
+      } finally {
+        calloc.free(pidBuf);
+      }
+    } finally {
+      calloc.free(nativeTitle);
+    }
   }
 
   void start() {

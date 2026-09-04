@@ -154,6 +154,8 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _restart() async {
     final saved = await _save();
     if (!saved) return;
+    // exit(0) 不会走 dispose，重启前手动落盘成长数据
+    widget.pet.growth.save();
     Process.start(Platform.resolvedExecutable, [], mode: ProcessStartMode.detached);
     exit(0);
   }

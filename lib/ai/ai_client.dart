@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import '../core/config.dart';
 
@@ -46,7 +47,13 @@ class AiClient {
       final text = content?.trim();
       if (text == null || text.isEmpty) return null;
       return text.length > 60 ? text.substring(0, 60) : text;
-    } catch (_) {
+    } on DioException catch (e) {
+      // 仅记录状态码与错误类型用于排障；不记录请求头（含 API Key）
+      debugPrint(
+          'AI chat failed: status=${e.response?.statusCode ?? '-'} type=${e.type.name}');
+      return null;
+    } catch (e) {
+      debugPrint('AI chat failed: $e');
       return null;
     }
   }
