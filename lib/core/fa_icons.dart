@@ -45,4 +45,5 @@ class Fa7 {
   static const IconData mugHot = IconData(0xf7b6, fontFamily: _family);
   static const IconData stop = IconData(0xf04d, fontFamily: _family);
   static const IconData sliders = IconData(0xf1de, fontFamily: _family);
+  static const IconData shuffle = IconData(0xf074, fontFamily: _family);
 }

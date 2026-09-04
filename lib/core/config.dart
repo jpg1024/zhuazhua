@@ -120,6 +120,9 @@ class AppConfig {
   /// 开机自启动（写入 HKCU Run 注册表）
   bool autoStart;
 
+  /// 启动时随机换一只动物（盲盒效果）。默认关闭：以设置页选择的动物为准。
+  bool randomAnimalOnStart;
+
   AppConfig({
     this.animalId = 'cat',
     AiConfig? ai,
@@ -132,6 +135,7 @@ class AppConfig {
     this.edgeSnap = true,
     this.hotkeyEnabled = true,
     this.autoStart = false,
+    this.randomAnimalOnStart = false,
   })  : ai = ai ?? AiConfig(),
         skins = skins ?? {};
 
@@ -156,6 +160,7 @@ class AppConfig {
           edgeSnap: j['edgeSnap'] ?? true,
           hotkeyEnabled: j['hotkeyEnabled'] ?? true,
           autoStart: j['autoStart'] ?? false,
+          randomAnimalOnStart: j['randomAnimalOnStart'] ?? false,
           skins: skinsJson.map((k, v) =>
               MapEntry(k, AnimalSkin.fromJson(v as Map<String, dynamic>))),
         );
@@ -178,6 +183,7 @@ class AppConfig {
         'edgeSnap': edgeSnap,
         'hotkeyEnabled': hotkeyEnabled,
         'autoStart': autoStart,
+        'randomAnimalOnStart': randomAnimalOnStart,
         'skins': {
           for (final e in skins.entries)
             if (!e.value.isEmpty) e.key: e.value.toJson()

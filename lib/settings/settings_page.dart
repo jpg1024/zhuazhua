@@ -43,6 +43,7 @@ class _SettingsPageState extends State<SettingsPage> {
   late bool _edgeSnap;
   late bool _hotkeyEnabled;
   late bool _autoStart;
+  late bool _randomAnimal;
   String? _status;
   bool _testing = false;
   bool _skinBusy = false;
@@ -68,6 +69,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _edgeSnap = cfg.edgeSnap;
     _hotkeyEnabled = cfg.hotkeyEnabled;
     _autoStart = cfg.autoStart;
+    _randomAnimal = cfg.randomAnimalOnStart;
     _growthList = GrowthSnapshot.loadAll();
     _sortGrowth();
     if (_growthList.isNotEmpty) _selectedGrowthId = _growthList.first.animalId;
@@ -139,6 +141,7 @@ class _SettingsPageState extends State<SettingsPage> {
     cfg.edgeSnap = _edgeSnap;
     cfg.hotkeyEnabled = _hotkeyEnabled;
     cfg.autoStart = _autoStart;
+    cfg.randomAnimalOnStart = _randomAnimal;
     cfg.save();
     // 快捷键与开机自启动立即生效
     KeyboardHookService.instance.hotkeyEnabled = _hotkeyEnabled;
@@ -681,6 +684,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     _hotkeyEnabled, (v) => setState(() => _hotkeyEnabled = v)),
                 _switchRow(Fa7.powerOff, '开机自启动', '登录 Windows 后自动运行（写入注册表）',
                     _autoStart, (v) => setState(() => _autoStart = v)),
+                _switchRow(Fa7.shuffle, '启动时随机动物', '每次启动随机换一只（盲盒）；关闭则固定使用上方选择的动物',
+                    _randomAnimal, (v) => setState(() => _randomAnimal = v)),
                 const SizedBox(height: 4),
                 const Text('开关在点击「保存」后生效。',
                     style: TextStyle(fontSize: 11, color: Colors.black38)),

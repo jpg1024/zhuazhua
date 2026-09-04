@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart' as acrylic;
@@ -26,6 +27,14 @@ Future<void> main() async {
   await acrylic.Window.initialize();
 
   appConfig = AppConfig.load();
+
+  // 盲盒模式（默认关）：每次启动随机换一只；关闭时严格按设置页选择
+  if (appConfig.randomAnimalOnStart) {
+    final candidates =
+        kAnimals.where((a) => a.id != appConfig.animalId).toList();
+    appConfig.animalId = candidates[Random().nextInt(candidates.length)].id;
+    appConfig.save();
+  }
 
   const options = WindowOptions(
     size: kPetWindowSize,

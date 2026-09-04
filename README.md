@@ -11,7 +11,7 @@
 「爪爪」是一只挂在桌面上的透明、无边框、始终置顶的小宠物：
 
 - **陪伴常驻**：无边框透明窗口，置顶显示，不占用任务栏。
-- **26 种动物**：14 种哺乳动物（老虎、狮子、狗狗、猫、大象、猴子、熊猫、袋鼠、长颈鹿、海豹、河马、猩猩、水獭、小熊猫）+ 12 种鸟类（鹰、鹦鹉、鸳鸯、企鹅、信天翁、天鹅、鸵鸟、鹭、松鸡、啄木鸟、海鸥、蜂鸟）。切换动物在**重启后生效**。
+- **26 种动物**：14 种哺乳动物（老虎、狮子、狗狗、猫、大象、猴子、熊猫、袋鼠、长颈鹿、海豹、河马、猩猩、水獭、小熊猫）+ 12 种鸟类（鹰、鹦鹉、鸳鸯、企鹅、信天翁、天鹅、鸵鸟、鹭、松鸡、啄木鸟、海鸥、蜂鸟）。切换动物在**重启后生效**；也可在设置页开启「启动时随机动物」盲盒模式，每次启动随机换一只。
 - **成长系统**：每只动物**独立**记录等级、经验、心情、互动次数、喂食次数、陪伴时长、相识天数，数据以 JSON 落盘。
 - **互动反馈**：
   - 左键单击 → 宠物开心弹跳 + 气泡对话（心情低落时台词会变委屈）。
@@ -47,6 +47,7 @@
 | 贴边吸附 / 半透明 | 拖到屏幕边缘自动吸附并半透明，悬停恢复，不挡工作区 | 设置页可关闭 |
 | 全局快捷键召唤 / 隐藏 | **Ctrl+Alt+P** 在任意界面下显示 / 隐藏宠物 | 设置页可关闭 |
 | 开机自启动 | 登录 Windows 后自动运行（写入 HKCU 注册表 Run 项） | 设置页开关 |
+| 启动时随机动物（盲盒） | 每次启动随机换一只动物；**默认关闭**，关闭时严格使用设置页选择的动物 | 设置页开关 |
 
 **中等成本 · 成长系统扩展**
 
@@ -143,7 +144,7 @@ flutter analyze lib               # 静态检查
 
 **调整番茄钟 / 时间问候 / 随机动作**：均在 `lib/pet/pet_controller.dart` —— `pomoFocusSeconds` / `pomoBreakSeconds`（番茄钟时长）、`_timePhrase()`（分时段问候台词）、`_scheduleRandomAction()` / `_startRandomAction()`（小动作频率与权重）。
 
-**修改行为开关默认值**：`lib/core/config.dart` 的 `AppConfig`（`edgeSnap` 贴边吸附 / `hotkeyEnabled` 快捷键 / `autoStart` 自启动）。全局快捷键组合在 `lib/core/keyboard_hook.dart` 的 `_pollKeys()`（默认 Ctrl+Alt+P），自启动注册表写入在 `lib/core/window_utils.dart`。
+**修改行为开关默认值**：`lib/core/config.dart` 的 `AppConfig`（`edgeSnap` 贴边吸附 / `hotkeyEnabled` 快捷键 / `autoStart` 自启动 / `randomAnimalOnStart` 启动随机动物）。全局快捷键组合在 `lib/core/keyboard_hook.dart` 的 `_pollKeys()`（默认 Ctrl+Alt+P），自启动注册表写入在 `lib/core/window_utils.dart`，启动随机逻辑在 `lib/main.dart` 的 `main()`。
 
 **修改 AI 行为**：`lib/pet/pet_controller.dart` 的 `_systemPrompt()`（人设 prompt）与 `_scheduleTip()`（主动提示节奏）；网络细节在 `lib/ai/ai_client.dart`。
 
@@ -246,6 +247,7 @@ flutter create . --platforms=macos,linux
 ## 8. 常见问题（FAQ）
 
 - **切换动物没反应？** 动物切换在**重启后**生效（每只动物有独立成长档案，重启以加载对应数据）。
+- **重启后动物自己变了？** 检查设置页「行为偏好 → 启动时随机动物」是否被打开（盲盒模式每次启动随机换一只，默认关闭）。
 - **`flutter pub get` 报 symlink 错误？** 开启 Windows 开发者模式，或手动创建插件目录联接（见 3.1）。
 - **编译报找不到 Visual Studio 工具链？** 安装 VS 2022 的「使用 C++ 的桌面开发」工作负载。
 - **双击 exe 打不开 / 缺 DLL？** 需连同 `Release\` 目录下的 DLL 与 `data\` 一起分发。
