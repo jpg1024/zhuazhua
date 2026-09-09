@@ -18,7 +18,7 @@ class SkinResult {
 class SkinService {
   static const _maxImageFileBytes = 25 * 1024 * 1024;
   static const _maxImagePixels = 40 * 1000 * 1000;
-  static const _maxObjFaces = 60000;
+  static const _maxObjFaces = 5000;
 
   /// 选择图片并处理为透明底 PNG，返回处理结果；成功时更新 config（不落盘，由调用方 save）。
   static Future<SkinResult> pickAndProcessImage(

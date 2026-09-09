@@ -9,6 +9,7 @@ import 'package:window_manager/window_manager.dart';
 import '../core/animals.dart';
 import '../core/click_through.dart';
 import '../core/config.dart';
+import '../core/constants.dart';
 import '../core/fa_icons.dart';
 import '../growth/growth_service.dart';
 import '../skin/model_pet_view.dart';
@@ -96,10 +97,9 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
 
   // 动物 bottom:8、水平居中、边长 96*scale；四周留余量（顶部含跳跃 -26px）
   Rect _petHitRect() {
-    const w = 280.0, h = 380.0;
     final size = 96 * c.petScale;
-    final left = (w - size) / 2 - 8;
-    final top = h - 8 - size - 30;
+    final left = (kPetWindowWidth - size) / 2 - 8;
+    final top = kPetWindowHeight - 8 - size - 30;
     return Rect.fromLTWH(left, top, size + 16, size + 38);
   }
 
@@ -169,10 +169,8 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
   static const double _menuHeight = 320;
 
   void _openMenu(Offset local) {
-    const w = 280.0, h = 380.0;
-    final dx = local.dx.clamp(8.0, w - _menuWidth - 8.0);
-    // 窗口高 380，菜单高 320：dy 上限为 52，保证 clamp 范围有效且菜单不越窗
-    final dy = local.dy.clamp(8.0, h - _menuHeight - 8.0);
+    final dx = local.dx.clamp(8.0, kPetWindowWidth - _menuWidth - 8.0);
+    final dy = local.dy.clamp(8.0, kPetWindowHeight - _menuHeight - 8.0);
     setState(() {
       _menuPos = Offset(dx, dy);
       _menuOpen = true;
@@ -231,9 +229,9 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
 
     // 4. 开始巡逻移动 + 飞/跑波浪动画
     _patrolPhase = 'patrolling';
-    _patrolWave.repeat(reverse: false);
+    unawaited(_patrolWave.repeat(reverse: false));
     _patrolMoveTimer = Timer.periodic(
-        const Duration(milliseconds: 16), (_) => _updatePatrolPosition());
+        const Duration(milliseconds: 33), (_) => _updatePatrolPosition());
   }
 
   Future<void> _stopPatrolAnimation() async {

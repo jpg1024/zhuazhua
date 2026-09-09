@@ -1,7 +1,6 @@
-import 'dart:convert';
-
 import 'package:flutter/widgets.dart';
 
+import '../core/atomic_json.dart';
 import '../growth/growth_service.dart';
 import 'config.dart';
 import 'fa_icons.dart';
@@ -179,30 +178,25 @@ class AchievementsService extends ChangeNotifier {
   }
 
   void _load() {
-    try {
-      final f = AppPaths.achievementsFile;
-      if (!f.existsSync()) return;
-      final j = jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
-      pomodoros = j['pomodoros'] ?? 0;
-      final unlocked = j['unlocked'] as Map<String, dynamic>? ?? {};
-      for (final e in unlocked.entries) {
-        _unlocked[e.key] =
-            DateTime.tryParse(e.value as String? ?? '') ?? DateTime.now();
-      }
-    } catch (_) {}
+    final f = AppPaths.achievementsFile;
+    final j = AtomicJson.read(f);
+    if (j == null) return;
+    pomodoros = j['pomodoros'] ?? 0;
+    final unlocked = j['unlocked'] as Map<String, dynamic>? ?? {};
+    for (final e in unlocked.entries) {
+      _unlocked[e.key] =
+          DateTime.tryParse(e.value as String? ?? '') ?? DateTime.now();
+    }
   }
 
   void save() {
-    try {
-      AppPaths.achievementsFile.writeAsStringSync(
-          const JsonEncoder.withIndent('  ').convert({
-        'pomodoros': pomodoros,
-        'unlocked': {
-          for (final e in _unlocked.entries)
-            e.key: e.value.toIso8601String()
-        },
-      }));
-    } catch (_) {}
+    AtomicJson.write(AppPaths.achievementsFile, {
+      'pomodoros': pomodoros,
+      'unlocked': {
+        for (final e in _unlocked.entries)
+          e.key: e.value.toIso8601String()
+      },
+    });
   }
 
   void _save() => save();

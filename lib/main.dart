@@ -8,16 +8,15 @@ import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'core/animals.dart';
+import 'core/click_through.dart';
 import 'core/config.dart';
+import 'core/constants.dart';
 import 'core/keyboard_hook.dart';
 import 'core/window_utils.dart';
 import 'growth/growth_service.dart';
 import 'pet/pet_controller.dart';
 import 'pet/pet_page.dart';
 import 'settings/settings_page.dart';
-
-const Size kPetWindowSize = Size(280, 380);
-const Size kSettingsWindowSize = Size(720, 840);
 
 late final AppConfig appConfig;
 
@@ -49,7 +48,27 @@ Future<void> main() async {
     await windowManager.setResizable(false);
     await acrylic.Window.setEffect(effect: acrylic.WindowEffect.transparent);
     if (appConfig.windowX != null && appConfig.windowY != null) {
-      await windowManager.setPosition(Offset(appConfig.windowX!, appConfig.windowY!));
+      // 钳制到当前工作区内，无交集时回退右下角（防止拔副屏后宠物永久失踪）。
+      final area = WindowUtils.instance.workArea();
+      var x = appConfig.windowX!;
+      var y = appConfig.windowY!;
+      if (area != null) {
+        // 窗口完全在工作区外时回退
+        if (x + kPetWindowSize.width <= area.left ||
+            x >= area.right ||
+            y + kPetWindowSize.height <= area.top ||
+            y >= area.bottom) {
+          x = area.right - kPetWindowSize.width;
+          y = area.bottom - kPetWindowSize.height;
+        }
+        x = x.clamp(area.left, area.right - kPetWindowSize.width);
+        y = y.clamp(area.top, area.bottom - kPetWindowSize.height);
+      }
+      await windowManager.setPosition(Offset(x, y));
+      // 更新配置中的位置，避免下次启动仍用旧坐标
+      appConfig.windowX = x;
+      appConfig.windowY = y;
+      appConfig.save();
     } else {
       await windowManager.setAlignment(Alignment.bottomRight);
     }
@@ -166,6 +185,8 @@ class _AppShellState extends State<AppShell>
       await windowManager.show();
     }
     // 同步 TickerMode：隐藏时暂停全部动画，省 CPU
+    // 同步 ClickThroughService：隐藏时跳过 100ms 光标轮询
+    ClickThroughService.instance.isVisible = !_visible;
     setState(() => _visible = !_visible);
   }
 
@@ -174,6 +195,8 @@ class _AppShellState extends State<AppShell>
     _posSaveTimer?.cancel();
     _posSaveTimer = Timer(const Duration(seconds: 1), () async {
       if (mode != AppMode.pet) return;
+      // 巡逻期间窗口位置由动画控制，不存档（防止 ±100px 偏移污染 config）。
+      if (pet.isPatrolling) return;
       final pos = await windowManager.getPosition();
       appConfig.windowX = pos.dx;
       appConfig.windowY = pos.dy;
@@ -246,9 +269,10 @@ class _AppShellState extends State<AppShell>
     }
   }
 
-  void _exit() {
+  Future<void> _exit() async {
     growth.save();
-    trayManager.destroy();
+    pet.dispose();
+    await trayManager.destroy();
     exit(0);
   }
 

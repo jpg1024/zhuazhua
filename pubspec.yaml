@@ -1,7 +1,5 @@
 name: zoo_desktop_pet
-description: "A new Flutter project."
-# The following line prevents the package from being accidentally published to
-# pub.dev using `flutter pub publish`. This is preferred for private packages.
+description: "26 种卡通动物常驻桌面的 Windows 桌面宠物"
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
 # The following defines the version and build number for your application.
@@ -33,12 +31,10 @@ dependencies:
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
-  cupertino_icons: ^1.0.8
   window_manager: ^0.5.2
   tray_manager: ^0.5.3
   flutter_acrylic: ^1.1.4
   dio: ^5.11.0
-  path_provider: ^2.1.6
   flutter_svg: ^2.3.0
   file_selector: ^1.0.3
   image: ^4.3.0

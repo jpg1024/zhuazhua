@@ -42,6 +42,8 @@ class PetController extends ChangeNotifier {
   Timer? _actionStopTimer;
   Timer? _greetTimer;
   Timer? _pomoTimer;
+  /// 共享状态复位定时器（眨眼、互动、喂食的匿名 Timer 统一收口，dispose 时可取消）。
+  Timer? _stateResetTimer;
   DateTime _lastInteraction = DateTime.now();
   int _lastSeenOnline = 0;
 
@@ -111,8 +113,10 @@ class PetController extends ChangeNotifier {
   }
 
   void _checkAchievements() {
+    // 使用内存中的 growth 实例（非活跃动物启动时已加载一次），
+    // 避免每分钟在 UI 线程上读遍全部 JSON 文件。
     final stats = AchievementsService.aggregate(
-        GrowthSnapshot.loadAll(), achievements.pomodoros);
+        [growth.toSnapshot()], achievements.pomodoros);
     final newly = achievements.checkAll(stats);
     for (final a in newly) {
       showBubble('🏆 解锁成就「${a.name}」！', seconds: 6);
@@ -358,7 +362,8 @@ class PetController extends ChangeNotifier {
       if (state == PetState.idle) {
         state = PetState.blink;
         notifyListeners();
-        Timer(const Duration(milliseconds: 260), () {
+        _stateResetTimer?.cancel();
+        _stateResetTimer = Timer(const Duration(milliseconds: 260), () {
           if (state == PetState.blink) {
             state = PetState.idle;
             notifyListeners();
@@ -370,6 +375,7 @@ class PetController extends ChangeNotifier {
   }
 
   void _scheduleTip() {
+    _tipTimer?.cancel();
     if (!config.ai.enabled) return;
     final base = config.ai.tipIntervalMinutes.clamp(5, 720);
     final delay = Duration(minutes: base + _rand.nextInt(base ~/ 2 + 1));
@@ -387,6 +393,12 @@ class PetController extends ChangeNotifier {
       }
       _scheduleTip();
     });
+  }
+
+  /// 外部调用（如设置页保存 AI 配置后）：重新排程主动提示定时器。
+  void rescheduleTip() {
+    _tipTimer?.cancel();
+    if (config.ai.enabled) _scheduleTip();
   }
 
   String _systemPrompt() =>
@@ -410,7 +422,8 @@ class PetController extends ChangeNotifier {
     final wasSleeping = state == PetState.sleep;
     state = PetState.happy;
     notifyListeners();
-    Timer(const Duration(milliseconds: 1200), () {
+    _stateResetTimer?.cancel();
+    _stateResetTimer = Timer(const Duration(milliseconds: 1200), () {
       if (state == PetState.happy) {
         state = PetState.idle;
         notifyListeners();
@@ -451,7 +464,8 @@ class PetController extends ChangeNotifier {
     feedingFood = animal.foods[_rand.nextInt(animal.foods.length)];
     state = PetState.eat;
     notifyListeners();
-    Timer(const Duration(milliseconds: 1600), () {
+    _stateResetTimer?.cancel();
+    _stateResetTimer = Timer(const Duration(milliseconds: 1600), () {
       if (state == PetState.eat) {
         state = PetState.idle;
         notifyListeners();
@@ -514,6 +528,7 @@ class PetController extends ChangeNotifier {
     _actionStopTimer?.cancel();
     _greetTimer?.cancel();
     _pomoTimer?.cancel();
+    _stateResetTimer?.cancel();
     KeyboardHookService.instance.dispose();
     super.dispose();
   }

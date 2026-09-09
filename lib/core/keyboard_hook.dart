@@ -31,39 +31,17 @@ class KeyboardHookService {
   bool hotkeyEnabled = true;
   bool _hotkeyDown = false;
 
-  // ── 打字速度检测 ──────────────────────────────────────────────────────────
-  DateTime? _lastKeyTimestamp;
-  double _typingSpeed = 0.0;
-  Timer? _decayTimer;
-  final _typingSpeedController = StreamController<double>.broadcast();
-
-  /// 打字速度流：推送归一化速度值（0.0=静止, 1.0=极速）。
-  Stream<double> get typingSpeedStream => _typingSpeedController.stream;
-
-  /// 当前打字速度（0.0~1.0）。
-  double get typingSpeed => _typingSpeed;
-
   /// 当前是否正在打字（距最后一次按键 < 1.5 秒）。
   bool get isTyping =>
       DateTime.now().difference(_lastKeyTime).inMilliseconds < 1500;
 
-  /// 开始轮询键盘状态（每 50ms 检测一次）。
+  /// 开始轮询键盘状态（每 100ms 检测一次）。
   void install() {
     if (!Platform.isWindows || _installed) return;
     _installed = true;
 
-    _pollTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
+    _pollTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
       _pollKeys();
-    });
-    // 60fps 衰减定时器：平滑回落到 0
-    _decayTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
-      if (_typingSpeed > 0.001) {
-        _typingSpeed *= 0.965;
-        _typingSpeedController.add(_typingSpeed);
-      } else if (_typingSpeed > 0) {
-        _typingSpeed = 0;
-        _typingSpeedController.add(0);
-      }
     });
   }
 
@@ -78,28 +56,15 @@ class KeyboardHookService {
       _hotkeyDown = combo;
     }
 
-    // 检测常用键码范围：字母、数字、功能键、空格、标点等
+    // 检测常用键码：字母、数字、空格、功能键、常见标点（约 53 个码）。
+    // 排除修饰键、NumLock、ScrollLock、音量键等，避免误触发巡逻。
     // VK_SPACE=0x20, VK_0..VK_9=0x30..0x39, VK_A..VK_Z=0x41..0x5A,
-    // VK_F1..VK_F24=0x70..0x87, 标点 VK_OEM_*=0xBA..0xC0, 0xDB..0xDE
-    for (var vk = 0x20; vk <= 0xFE; vk++) {
-      // 跳过鼠标按钮键码
-      if (vk >= 0x01 && vk <= 0x06) continue;
+    // VK_F1..VK_F12=0x70..0x7B, 标点 VK_OEM_*=0xBA,0xBB..0xC0,0xDB..0xDE
+    for (final vk in _typableVks) {
       final state = _getAsyncKeyState(vk);
       // 高位为 1 表示按键当前处于按下状态
       if (state & 0x8000 != 0) {
-        final now = DateTime.now();
-        _lastKeyTime = now;
-        // 计算打字速度
-        if (_lastKeyTimestamp != null) {
-          final interval = now.difference(_lastKeyTimestamp!).inMilliseconds;
-          if (interval > 0 && interval < 2000) {
-            // 100ms → 1.0（极速），500ms → 0.2（慢速），≥1000ms → ~0.05
-            final instant = (100.0 / interval).clamp(0.05, 1.0);
-            _typingSpeed = _typingSpeed * 0.6 + instant * 0.4;
-            _typingSpeedController.add(_typingSpeed);
-          }
-        }
-        _lastKeyTimestamp = now;
+        _lastKeyTime = DateTime.now();
         break;
       }
     }
@@ -112,19 +77,32 @@ class KeyboardHookService {
     }
   }
 
+  /// 与打字相关的虚拟键码（字母、数字、空格、F1-F12、常见标点）。
+  static const List<int> _typableVks = [
+    0x20, // VK_SPACE
+    // VK_0..VK_9
+    0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39,
+    // VK_A..VK_Z
+    0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A,
+    0x4B, 0x4C, 0x4D, 0x4E, 0x4F, 0x50, 0x51, 0x52, 0x53, 0x54,
+    0x55, 0x56, 0x57, 0x58, 0x59, 0x5A,
+    // VK_F1..VK_F12
+    0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79,
+    0x7A, 0x7B,
+    // VK_OEM (常见标点：分号、=、逗号、减号、句号、斜杠、反引号、方括号)
+    0xBA, 0xBB, 0xBC, 0xBD, 0xBE, 0xBF, 0xC0, 0xDB, 0xDC, 0xDD, 0xDE,
+  ];
+
   /// 停止轮询。
   void uninstall() {
     _pollTimer?.cancel();
     _pollTimer = null;
-    _decayTimer?.cancel();
-    _decayTimer = null;
     _installed = false;
   }
 
   void dispose() {
     uninstall();
     _activityController.close();
-    _typingSpeedController.close();
     _hotkeyController.close();
   }
 }

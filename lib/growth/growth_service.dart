@@ -1,9 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../core/atomic_json.dart';
 import '../core/config.dart';
 
 class GrowthEvent {
@@ -72,12 +72,10 @@ class GrowthSnapshot {
         if (entity is! File || !entity.path.toLowerCase().endsWith('.json')) {
           continue;
         }
-        try {
-          final name = entity.uri.pathSegments.last;
-          final id = name.substring(0, name.length - 5);
-          final j = jsonDecode(entity.readAsStringSync()) as Map<String, dynamic>;
-          result.add(GrowthSnapshot.fromJson(id, j));
-        } catch (_) {}
+        final name = entity.uri.pathSegments.last;
+        final id = name.substring(0, name.length - 5);
+        final j = AtomicJson.read(entity);
+        if (j != null) result.add(GrowthSnapshot.fromJson(id, j));
       }
     } catch (_) {}
     return result;
@@ -104,6 +102,19 @@ class GrowthService extends ChangeNotifier {
 
   int get expToNext => 100 * level;
 
+  /// 从内存状态创建只读快照（供成就检测用，避免每分钟读盘）。
+  GrowthSnapshot toSnapshot() => GrowthSnapshot(
+        animalId: animalId,
+        createdAt: createdAt,
+        level: level,
+        exp: exp,
+        mood: mood,
+        totalInteractions: totalInteractions,
+        totalOnlineMinutes: totalOnlineMinutes,
+        totalFeedings: totalFeedings,
+        lastActiveAt: lastActiveAt,
+      );
+
   GrowthService(this.animalId) {
     _load();
     _minuteTimer = Timer.periodic(const Duration(minutes: 1), (_) => _tick());
@@ -112,43 +123,40 @@ class GrowthService extends ChangeNotifier {
   File get _file => File('${AppPaths.growthDir.path}\\$animalId.json');
 
   void _load() {
-    try {
-      if (_file.existsSync()) {
-        final j = jsonDecode(_file.readAsStringSync()) as Map<String, dynamic>;
-        createdAt = DateTime.tryParse(j['createdAt'] ?? '') ?? DateTime.now();
-        level = j['level'] ?? 1;
-        exp = j['exp'] ?? 0;
-        mood = j['mood'] ?? 80;
-        totalInteractions = j['totalInteractions'] ?? 0;
-        totalOnlineMinutes = j['totalOnlineMinutes'] ?? 0;
-        totalFeedings = j['totalFeedings'] ?? 0;
-        lastActiveAt = DateTime.tryParse(j['lastActiveAt'] ?? '') ?? DateTime.now();
-        events = ((j['events'] as List?) ?? [])
-            .map((e) => GrowthEvent.fromJson(e as Map<String, dynamic>))
-            .toList();
-      } else {
-        addEvent('birth', '第一次见面，请多关照！');
-        save();
-      }
-    } catch (_) {}
+    final j = AtomicJson.read(_file);
+    if (j != null) {
+      createdAt = DateTime.tryParse(j['createdAt'] ?? '') ?? DateTime.now();
+      level = j['level'] ?? 1;
+      exp = j['exp'] ?? 0;
+      mood = j['mood'] ?? 80;
+      totalInteractions = j['totalInteractions'] ?? 0;
+      totalOnlineMinutes = j['totalOnlineMinutes'] ?? 0;
+      totalFeedings = j['totalFeedings'] ?? 0;
+      lastActiveAt = DateTime.tryParse(j['lastActiveAt'] ?? '') ?? DateTime.now();
+      events = ((j['events'] as List?) ?? [])
+          .map((e) => GrowthEvent.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } else if (!_file.existsSync()) {
+      addEvent('birth', '第一次见面，请多关照！');
+      save();
+    }
   }
 
   void save() {
-    try {
-      lastActiveAt = DateTime.now();
-      _file.writeAsStringSync(const JsonEncoder.withIndent('  ').convert({
-        'animalId': animalId,
-        'createdAt': createdAt.toIso8601String(),
-        'level': level,
-        'exp': exp,
-        'mood': mood,
-        'totalInteractions': totalInteractions,
-        'totalOnlineMinutes': totalOnlineMinutes,
-        'totalFeedings': totalFeedings,
-        'lastActiveAt': lastActiveAt.toIso8601String(),
-        'events': events.map((e) => e.toJson()).toList(),
-      }));
-    } catch (_) {}
+    lastActiveAt = DateTime.now();
+    final ok = AtomicJson.write(_file, {
+      'animalId': animalId,
+      'createdAt': createdAt.toIso8601String(),
+      'level': level,
+      'exp': exp,
+      'mood': mood,
+      'totalInteractions': totalInteractions,
+      'totalOnlineMinutes': totalOnlineMinutes,
+      'totalFeedings': totalFeedings,
+      'lastActiveAt': lastActiveAt.toIso8601String(),
+      'events': events.map((e) => e.toJson()).toList(),
+    });
+    if (!ok) debugPrint('GrowthService.save($animalId) failed');
   }
 
   void addEvent(String type, String detail) {

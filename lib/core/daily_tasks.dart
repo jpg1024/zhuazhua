@@ -1,7 +1,6 @@
-import 'dart:convert';
-
 import 'package:flutter/widgets.dart';
 
+import '../core/atomic_json.dart';
 import 'config.dart';
 import 'fa_icons.dart';
 
@@ -107,10 +106,8 @@ class DailyTaskService extends ChangeNotifier {
   }
 
   void _load() {
-    try {
-      final f = AppPaths.dailyTasksFile;
-      if (!f.existsSync()) return;
-      final j = jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
+    final j = AtomicJson.read(AppPaths.dailyTasksFile);
+    if (j != null) {
       _date = j['date'] ?? _today();
       final counts = j['counts'] as Map<String, dynamic>? ?? {};
       counts.forEach((k, v) => _counts[k] = v as int? ?? 0);
@@ -119,17 +116,14 @@ class DailyTaskService extends ChangeNotifier {
         if (id is String) _done.add(id);
       }
       _rollover();
-    } catch (_) {}
+    }
   }
 
   void _save() {
-    try {
-      AppPaths.dailyTasksFile.writeAsStringSync(
-          const JsonEncoder.withIndent('  ').convert({
-        'date': _date,
-        'counts': _counts,
-        'done': _done.toList(),
-      }));
-    } catch (_) {}
+    AtomicJson.write(AppPaths.dailyTasksFile, {
+      'date': _date,
+      'counts': _counts,
+      'done': _done.toList(),
+    });
   }
 }

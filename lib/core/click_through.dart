@@ -67,6 +67,8 @@ class ClickThroughService {
 
   int _hwnd = 0;
   Timer? _timer;
+  Pointer<_Point>? _ptBuf;
+  Pointer<_Rect>? _rcBuf;
 
   /// 宠物可交互矩形（窗口内逻辑坐标）。
   Rect Function()? hitRectProvider;
@@ -76,6 +78,9 @@ class ClickThroughService {
 
   /// 为 true 时整窗可交互（如右键菜单打开时）。
   bool forceInteractive = false;
+
+  /// 窗口隐藏时跳过轮询，省 CPU。
+  bool isVisible = true;
 
   int get _windowHandle {
     if (_hwnd == 0) {
@@ -120,36 +125,35 @@ class ClickThroughService {
 
   void start() {
     if (!Platform.isWindows || _timer != null) return;
+    _ptBuf = calloc<_Point>();
+    _rcBuf = calloc<_Rect>();
     _timer = Timer.periodic(const Duration(milliseconds: 100), (_) => _tick());
   }
 
   void stop() {
     _timer?.cancel();
     _timer = null;
+    if (_ptBuf != null) { calloc.free(_ptBuf!); _ptBuf = null; }
+    if (_rcBuf != null) { calloc.free(_rcBuf!); _rcBuf = null; }
     _setTransparent(false);
   }
 
   void _tick() {
-    if (_windowHandle == 0) return;
+    if (!isVisible || _windowHandle == 0) return;
     if (forceInteractive || hitRectProvider == null) {
       _setTransparent(false);
       return;
     }
-    final pt = calloc<_Point>();
-    final rc = calloc<_Rect>();
-    try {
-      if (_getCursorPos(pt) == 0 || _getWindowRect(_windowHandle, rc) == 0) {
-        _setTransparent(false);
-        return;
-      }
-      final localX = (pt.ref.x - rc.ref.left) / devicePixelRatio;
-      final localY = (pt.ref.y - rc.ref.top) / devicePixelRatio;
-      final inside = hitRectProvider!().contains(Offset(localX, localY));
-      _setTransparent(!inside);
-    } finally {
-      calloc.free(pt);
-      calloc.free(rc);
+    final pt = _ptBuf!;
+    final rc = _rcBuf!;
+    if (_getCursorPos(pt) == 0 || _getWindowRect(_windowHandle, rc) == 0) {
+      _setTransparent(false);
+      return;
     }
+    final localX = (pt.ref.x - rc.ref.left) / devicePixelRatio;
+    final localY = (pt.ref.y - rc.ref.top) / devicePixelRatio;
+    final inside = hitRectProvider!().contains(Offset(localX, localY));
+    _setTransparent(!inside);
   }
 
   void _setTransparent(bool value) {

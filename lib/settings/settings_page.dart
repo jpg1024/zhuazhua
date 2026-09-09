@@ -70,6 +70,12 @@ class _SettingsPageState extends State<SettingsPage> {
     _hotkeyEnabled = cfg.hotkeyEnabled;
     _autoStart = cfg.autoStart;
     _randomAnimal = cfg.randomAnimalOnStart;
+    // 用注册表实际状态校正配置，避免外部修改导致设置页显示陈旧状态。
+    if (WindowUtils.instance.autoStartEnabled() != _autoStart) {
+      _autoStart = WindowUtils.instance.autoStartEnabled();
+      cfg.autoStart = _autoStart;
+      cfg.save();
+    }
     _growthList = GrowthSnapshot.loadAll();
     _sortGrowth();
     if (_growthList.isNotEmpty) _selectedGrowthId = _growthList.first.animalId;
@@ -143,8 +149,9 @@ class _SettingsPageState extends State<SettingsPage> {
     cfg.autoStart = _autoStart;
     cfg.randomAnimalOnStart = _randomAnimal;
     cfg.save();
-    // 快捷键与开机自启动立即生效
+    // 快捷键与开机自启动立即生效；AI 配置变更后重排提示定时器
     KeyboardHookService.instance.hotkeyEnabled = _hotkeyEnabled;
+    widget.pet.rescheduleTip();
     final autoStartOk = WindowUtils.instance.setAutoStart(_autoStart);
     if (mounted) {
       setState(() => _status = !autoStartOk
@@ -159,7 +166,12 @@ class _SettingsPageState extends State<SettingsPage> {
     if (!saved) return;
     // exit(0) 不会走 dispose，重启前手动落盘成长数据
     widget.pet.growth.save();
-    Process.start(Platform.resolvedExecutable, [], mode: ProcessStartMode.detached);
+    try {
+      await Process.start(Platform.resolvedExecutable, [], mode: ProcessStartMode.detached);
+    } catch (e) {
+      if (mounted) setState(() => _status = '重启失败，请手动启动：$e');
+      return;
+    }
     exit(0);
   }
 
@@ -753,6 +765,8 @@ class _SettingsPageState extends State<SettingsPage> {
         'assets/animals/$id.png',
         fit: BoxFit.contain,
         filterQuality: FilterQuality.medium,
+        cacheWidth: (size * 2).round(),
+        gaplessPlayback: true,
         errorBuilder: (_, _, _) =>
             Text(emoji, style: TextStyle(fontSize: size * 0.8)),
       ),

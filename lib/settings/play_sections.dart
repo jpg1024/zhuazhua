@@ -77,8 +77,8 @@ class _PomodoroCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('专注 25 分钟 → 休息 5 分钟',
-                        style: const TextStyle(
+                    const Text('专注 25 分钟 → 休息 5 分钟',
+                        style: TextStyle(
                             fontSize: 12.5, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 3),
                     Text(

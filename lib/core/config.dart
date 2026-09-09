@@ -1,31 +1,37 @@
-import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show debugPrint;
+
+import 'atomic_json.dart';
 import 'dpapi.dart';
 
 class AppPaths {
-  static Directory get root {
+  // 懒初始化目录缓存（只求值一次），避免每次 save/load 都走 existsSync。
+  static final Directory root = _initDir(() {
     final appData = Platform.environment['APPDATA'] ??
         '${Platform.environment['USERPROFILE']}\\AppData\\Roaming';
-    final dir = Directory('$appData\\zoo_desktop_pet');
-    if (!dir.existsSync()) dir.createSync(recursive: true);
-    return dir;
-  }
-
-  static Directory get growthDir {
-    final dir = Directory('${root.path}\\growth');
-    if (!dir.existsSync()) dir.createSync(recursive: true);
-    return dir;
-  }
-
+    return Directory('$appData\\zoo_desktop_pet');
+  });
+  static final Directory growthDir =
+      _initDir(() => Directory('${root.path}\\growth'));
+  static final Directory configFileDir = root;
   static File get configFile => File('${root.path}\\config.json');
-
   static File get achievementsFile => File('${root.path}\\achievements.json');
-
   static File get dailyTasksFile => File('${root.path}\\daily_tasks.json');
 
+  static Directory _skinDirCache = Directory('');
   static Directory skinDir(String animalId) {
-    final dir = Directory('${root.path}\\skins\\$animalId');
+    final path = '${root.path}\\skins\\$animalId';
+    if (_skinDirCache.path != path) {
+      final dir = Directory(path);
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+      _skinDirCache = dir;
+    }
+    return _skinDirCache;
+  }
+
+  static Directory _initDir(Directory Function() create) {
+    final dir = create();
     if (!dir.existsSync()) dir.createSync(recursive: true);
     return dir;
   }
@@ -60,6 +66,10 @@ class AiConfig {
   /// 落盘密文前缀：无前缀视为旧版明文，读取兼容、下次保存自动迁移为密文。
   static const String _cipherPrefix = 'dpapi:';
 
+  /// 密文缓存：apiKey 未变时复用上次加密结果，避免每次 save 都调用 CryptProtectData。
+  String? _cachedCipher;
+  String? _cachedPlainKey;
+
   AiConfig({
     this.baseUrl = '',
     this.apiKey = '',
@@ -84,10 +94,18 @@ class AiConfig {
         'tipIntervalMinutes': tipIntervalMinutes,
       };
 
-  static String _encryptKey(String key) {
-    if (key.isEmpty) return '';
+  String _encryptKey(String key) {
+    if (key.isEmpty) {
+      _cachedCipher = null;
+      _cachedPlainKey = null;
+      return '';
+    }
+    if (key == _cachedPlainKey && _cachedCipher != null) return _cachedCipher!;
     final cipher = Dpapi.protect(key);
-    return cipher == null ? key : '$_cipherPrefix$cipher';
+    final result = cipher == null ? key : '$_cipherPrefix$cipher';
+    _cachedCipher = result;
+    _cachedPlainKey = key;
+    return result;
   }
 
   static String _decryptKey(String stored) {
@@ -143,52 +161,47 @@ class AppConfig {
       skins.putIfAbsent(animalId, () => AnimalSkin());
 
   static AppConfig load() {
-    try {
-      final f = AppPaths.configFile;
-      if (f.existsSync()) {
-        final j = jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
-        final skinsJson = j['skins'] as Map<String, dynamic>? ?? {};
-        return AppConfig(
-          animalId: j['animalId'] ?? 'cat',
-          ai: AiConfig.fromJson(j['ai'] ?? {}),
-          windowX: (j['windowX'] as num?)?.toDouble(),
-          windowY: (j['windowY'] as num?)?.toDouble(),
-          petScale: (j['petScale'] as num?)?.toDouble() ?? 1.0,
-          patrolDirection: j['patrolDirection'] ?? 'left',
-          sleepTimeoutMinutes:
-              (j['sleepTimeoutMinutes'] as num?)?.toDouble() ?? 60,
-          edgeSnap: j['edgeSnap'] ?? true,
-          hotkeyEnabled: j['hotkeyEnabled'] ?? true,
-          autoStart: j['autoStart'] ?? false,
-          randomAnimalOnStart: j['randomAnimalOnStart'] ?? false,
-          skins: skinsJson.map((k, v) =>
-              MapEntry(k, AnimalSkin.fromJson(v as Map<String, dynamic>))),
-        );
-      }
-    } catch (_) {}
+    final j = AtomicJson.read(AppPaths.configFile);
+    if (j != null) {
+      final skinsJson = j['skins'] as Map<String, dynamic>? ?? {};
+      return AppConfig(
+        animalId: j['animalId'] ?? 'cat',
+        ai: AiConfig.fromJson(j['ai'] ?? {}),
+        windowX: (j['windowX'] as num?)?.toDouble(),
+        windowY: (j['windowY'] as num?)?.toDouble(),
+        petScale: (j['petScale'] as num?)?.toDouble() ?? 1.0,
+        patrolDirection: j['patrolDirection'] ?? 'left',
+        sleepTimeoutMinutes:
+            (j['sleepTimeoutMinutes'] as num?)?.toDouble() ?? 60,
+        edgeSnap: j['edgeSnap'] ?? true,
+        hotkeyEnabled: j['hotkeyEnabled'] ?? true,
+        autoStart: j['autoStart'] ?? false,
+        randomAnimalOnStart: j['randomAnimalOnStart'] ?? false,
+        skins: skinsJson.map((k, v) =>
+            MapEntry(k, AnimalSkin.fromJson(v as Map<String, dynamic>))),
+      );
+    }
     return AppConfig();
   }
 
   void save() {
-    try {
-      AppPaths.configFile.writeAsStringSync(
-          const JsonEncoder.withIndent('  ').convert({
-        'animalId': animalId,
-        'ai': ai.toJson(),
-        'windowX': windowX,
-        'windowY': windowY,
-        'petScale': petScale,
-        'patrolDirection': patrolDirection,
-        'sleepTimeoutMinutes': sleepTimeoutMinutes,
-        'edgeSnap': edgeSnap,
-        'hotkeyEnabled': hotkeyEnabled,
-        'autoStart': autoStart,
-        'randomAnimalOnStart': randomAnimalOnStart,
-        'skins': {
-          for (final e in skins.entries)
-            if (!e.value.isEmpty) e.key: e.value.toJson()
-        },
-      }));
-    } catch (_) {}
+    final ok = AtomicJson.write(AppPaths.configFile, {
+      'animalId': animalId,
+      'ai': ai.toJson(),
+      'windowX': windowX,
+      'windowY': windowY,
+      'petScale': petScale,
+      'patrolDirection': patrolDirection,
+      'sleepTimeoutMinutes': sleepTimeoutMinutes,
+      'edgeSnap': edgeSnap,
+      'hotkeyEnabled': hotkeyEnabled,
+      'autoStart': autoStart,
+      'randomAnimalOnStart': randomAnimalOnStart,
+      'skins': {
+        for (final e in skins.entries)
+          if (!e.value.isEmpty) e.key: e.value.toJson()
+      },
+    });
+    if (!ok) debugPrint('AppConfig.save() failed');
   }
 }
