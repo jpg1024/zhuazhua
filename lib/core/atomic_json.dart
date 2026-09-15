@@ -42,9 +42,11 @@ class AtomicJson {
       final raw = file.readAsStringSync();
       return jsonDecode(raw) as Map<String, dynamic>;
     } on FormatException catch (e) {
-      // JSON 损坏：保留现场并回退 null
+      // JSON 损坏：保留现场并回退 null。
+      // 注意备份名不能以 .json 结尾，否则会被 GrowthSnapshot.loadAll()
+      // 等按 .json 后缀扫描的逻辑再次读到，导致每次扫描都重复"解析失败→改名"。
       final ts = DateTime.now().millisecondsSinceEpoch;
-      final backup = File('${file.path}.corrupt-$ts.json');
+      final backup = File('${file.path}.corrupt-$ts');
       try {
         file.renameSync(backup.path);
         debugPrint('AtomicJson: ${file.path} 解析失败，已备份为 ${backup.uri.pathSegments.last}');

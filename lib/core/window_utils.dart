@@ -15,13 +15,29 @@ final class _WinRect extends Struct {
   external int bottom;
 }
 
-/// Windows 原生小工具：主屏工作区（不含任务栏）与开机自启动注册表。
+final class _WinPoint extends Struct {
+  @Int32()
+  external int x;
+  @Int32()
+  external int y;
+}
+
+final class _MonitorInfo extends Struct {
+  @Uint32()
+  external int cbSize;
+  external _WinRect rcMonitor;
+  external _WinRect rcWork;
+  @Uint32()
+  external int dwFlags;
+}
+
+/// Windows 原生小工具：显示器工作区（不含任务栏）与开机自启动注册表。
 class WindowUtils {
   WindowUtils._();
 
   static final WindowUtils instance = WindowUtils._();
 
-  static const _spiGetWorkArea = 0x0030;
+  static const _monitorDefaultToNearest = 2;
   static const _hkeyCurrentUser = 0x80000001;
   static const _keyQueryValue = 0x0001;
   static const _keySetValue = 0x0002;
@@ -35,9 +51,12 @@ class WindowUtils {
   final _advapi32 =
       Platform.isWindows ? DynamicLibrary.open('advapi32.dll') : null;
 
-  late final _systemParametersInfo = _user32!.lookupFunction<
-      Int32 Function(Uint32, Uint32, Pointer<_WinRect>, Uint32),
-      int Function(int, int, Pointer<_WinRect>, int)>('SystemParametersInfoW');
+  late final _monitorFromPoint = _user32!.lookupFunction<
+      IntPtr Function(_WinPoint, Uint32),
+      int Function(_WinPoint, int)>('MonitorFromPoint');
+  late final _getMonitorInfo = _user32!.lookupFunction<
+      Int32 Function(IntPtr, Pointer<_MonitorInfo>),
+      int Function(int, Pointer<_MonitorInfo>)>('GetMonitorInfoW');
 
   late final _regOpenKeyEx = _advapi32!.lookupFunction<
       Int32 Function(IntPtr, Pointer<Utf16>, Uint32, Uint32, Pointer<IntPtr>),
@@ -60,18 +79,24 @@ class WindowUtils {
   late final _regCloseKey = _advapi32!.lookupFunction<
       Int32 Function(IntPtr), int Function(int)>('RegCloseKey');
 
-  /// 主屏工作区（不含任务栏），失败返回 null。
-  Rect? workArea() {
+  /// 包含（或最接近）[point] 的显示器工作区（不含任务栏），失败返回 null。
+  /// 多屏环境下必须用这个方法：SystemParametersInfoW(SPI_GETWORKAREA) 只返回主屏。
+  Rect? workAreaForPoint(Offset point) {
     if (!Platform.isWindows) return null;
-    final rc = calloc<_WinRect>();
+    final pt = calloc<_WinPoint>()
+      ..ref.x = point.dx.round()
+      ..ref.y = point.dy.round();
+    final info = calloc<_MonitorInfo>()..ref.cbSize = sizeOf<_MonitorInfo>();
     try {
-      final ok =
-          _systemParametersInfo(_spiGetWorkArea, 0, rc, 0);
-      if (ok == 0) return null;
-      return Rect.fromLTRB(rc.ref.left.toDouble(), rc.ref.top.toDouble(),
-          rc.ref.right.toDouble(), rc.ref.bottom.toDouble());
+      final hmon = _monitorFromPoint(pt.ref, _monitorDefaultToNearest);
+      if (hmon == 0) return null;
+      if (_getMonitorInfo(hmon, info) == 0) return null;
+      final rc = info.ref.rcWork;
+      return Rect.fromLTRB(rc.left.toDouble(), rc.top.toDouble(),
+          rc.right.toDouble(), rc.bottom.toDouble());
     } finally {
-      calloc.free(rc);
+      calloc.free(pt);
+      calloc.free(info);
     }
   }
 

@@ -22,13 +22,18 @@ class AiClient {
     if (!ready) return null;
     try {
       final base = config.baseUrl.replaceAll(RegExp(r'/+$'), '');
-      final url = base.endsWith('/v1')
-          ? '$base/chat/completions'
-          : '$base/v1/chat/completions';
+      // 用户可能填到 /v1 一级，也可能直接填完整的 /chat/completions 地址，都兼容
+      final url = base.endsWith('/chat/completions')
+          ? base
+          : base.endsWith('/v1')
+              ? '$base/chat/completions'
+              : '$base/v1/chat/completions';
       final resp = await _dio.post(
         url,
         options: Options(headers: {
           'Content-Type': 'application/json',
+          // 部分网关/WAF 会拒绝无 UA 的请求
+          'User-Agent': 'zoo_desktop_pet/1.1.0',
           if (config.apiKey.isNotEmpty)
             'Authorization': 'Bearer ${config.apiKey}',
         }),

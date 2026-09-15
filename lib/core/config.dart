@@ -1,39 +1,57 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 
 import 'atomic_json.dart';
 import 'dpapi.dart';
 
 class AppPaths {
-  // 懒初始化目录缓存（只求值一次），避免每次 save/load 都走 existsSync。
-  static final Directory root = _initDir(() {
-    final appData = Platform.environment['APPDATA'] ??
-        '${Platform.environment['USERPROFILE']}\\AppData\\Roaming';
-    return Directory('$appData\\zoo_desktop_pet');
-  });
-  static final Directory growthDir =
-      _initDir(() => Directory('${root.path}\\growth'));
-  static final Directory configFileDir = root;
+  /// 测试用根目录覆盖，通过 [resetForTesting] 设置并使缓存重建。
+  @visibleForTesting
+  static String? overrideRoot;
+
+  // 懒初始化目录缓存（每个根目录只求值一次），避免每次 save/load 都走 existsSync。
+  static Directory? _root;
+  static Directory? _growthDir;
+
+  static Directory get root => _root ??= _initDir(() {
+        if (overrideRoot != null) return Directory(overrideRoot!);
+        final appData = Platform.environment['APPDATA'] ??
+            '${Platform.environment['USERPROFILE']}\\AppData\\Roaming';
+        return Directory('$appData\\zoo_desktop_pet');
+      });
+  static Directory get growthDir =>
+      _growthDir ??= _initDir(() => Directory('${root.path}\\growth'));
+  static Directory get configFileDir => root;
   static File get configFile => File('${root.path}\\config.json');
   static File get achievementsFile => File('${root.path}\\achievements.json');
   static File get dailyTasksFile => File('${root.path}\\daily_tasks.json');
 
-  static Directory _skinDirCache = Directory('');
+  static Directory? _skinDirCache;
   static Directory skinDir(String animalId) {
     final path = '${root.path}\\skins\\$animalId';
-    if (_skinDirCache.path != path) {
+    final cache = _skinDirCache;
+    if (cache == null || cache.path != path) {
       final dir = Directory(path);
       if (!dir.existsSync()) dir.createSync(recursive: true);
       _skinDirCache = dir;
     }
-    return _skinDirCache;
+    return _skinDirCache!;
   }
 
   static Directory _initDir(Directory Function() create) {
     final dir = create();
     if (!dir.existsSync()) dir.createSync(recursive: true);
     return dir;
+  }
+
+  /// 测试专用：设置/清除根目录覆盖并清空全部目录缓存。
+  @visibleForTesting
+  static void resetForTesting([String? rootPath]) {
+    overrideRoot = rootPath;
+    _root = null;
+    _growthDir = null;
+    _skinDirCache = null;
   }
 }
 

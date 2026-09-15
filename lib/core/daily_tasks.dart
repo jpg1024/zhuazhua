@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 
 import '../core/atomic_json.dart';
@@ -119,11 +121,33 @@ class DailyTaskService extends ChangeNotifier {
     }
   }
 
+  Timer? _flushTimer;
+  bool _dirty = false;
+
+  /// 标记数据已变更，3 秒内合并落盘（节流，与 GrowthService 同策略）。
+  /// 需要立即持久化的路径（退出/重启）请调用 [flush]。
   void _save() {
+    _dirty = true;
+    _flushTimer ??= Timer(const Duration(seconds: 3), flush);
+  }
+
+  /// 立即将未落盘的变更写入磁盘（幂等）。
+  void flush() {
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    if (!_dirty) return;
+    _dirty = false;
     AtomicJson.write(AppPaths.dailyTasksFile, {
       'date': _date,
       'counts': _counts,
       'done': _done.toList(),
     });
+  }
+
+  @override
+  void dispose() {
+    _flushTimer?.cancel();
+    flush();
+    super.dispose();
   }
 }

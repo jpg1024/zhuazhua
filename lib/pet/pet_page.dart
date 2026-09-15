@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../core/animals.dart';
@@ -14,6 +13,7 @@ import '../core/fa_icons.dart';
 import '../growth/growth_service.dart';
 import '../skin/model_pet_view.dart';
 import '../skin/pseudo3d_image.dart';
+import '../widgets/growth_stats_panel.dart';
 import 'pet_controller.dart';
 
 class PetPage extends StatefulWidget {
@@ -520,28 +520,31 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
                         ? 1.0 + math.sin(waveT * 4 * math.pi) * 0.15
                         : 1.0;
 
+                    // 4 层 Transform 合并为单个 Matrix4：
+                    // 每帧少 3 个 widget + 3 次矩阵乘法（_breath 60fps 常驻）。
+                    // flipX 等价于绕 Y 轴转 180°；平移与居中仿射可交换，语义不变。
+                    final m = Matrix4.identity()
+                      ..translateByDouble(0, bounceY + patrolBob, 0, 1)
+                      ..rotateZ(spinAngle + patrolTilt + yawnTilt + moodTilt)
+                      ..scaleByDouble(
+                        squishX * (2 - stretch).clamp(0.9, 1.1) * spinShrink,
+                        breathScale *
+                            squishY *
+                            stretch *
+                            spinShrink *
+                            wingFlap *
+                            yawnScaleY,
+                        1,
+                        1,
+                      )
+                      ..rotateY(_patrolFlipX ? math.pi : 0.0);
+
                     return Opacity(
                       opacity: patrolOpacity.clamp(0.0, 1.0),
-                      child: Transform.translate(
-                        offset: Offset(0, bounceY + patrolBob),
-                        child: Transform.rotate(
-                          angle: spinAngle + patrolTilt + yawnTilt + moodTilt,
-                          child: Transform.scale(
-                            scaleY: breathScale *
-                                squishY *
-                                stretch *
-                                spinShrink *
-                                wingFlap *
-                                yawnScaleY,
-                            scaleX: squishX *
-                                (2 - stretch).clamp(0.9, 1.1) *
-                                spinShrink,
-                            child: Transform.flip(
-                              flipX: _patrolFlipX,
-                              child: child,
-                            ),
-                          ),
-                        ),
+                      child: Transform(
+                        transform: m,
+                        alignment: Alignment.center,
+                        child: child,
                       ),
                     );
                   },
@@ -583,15 +586,13 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
                 )
               : const Positioned(bottom: 0, child: SizedBox.shrink()),
         ),
-        // 番茄钟倒计时 chip
+        // 番茄钟倒计时 chip：阶段/颜色听 controller，秒数只听 pomoRemaining
         ListenableBuilder(
           listenable: c,
           builder: (context, _) {
             if (!c.pomoRunning) {
               return const Positioned(bottom: 0, child: SizedBox.shrink());
             }
-            final m = c.pomoRemaining ~/ 60;
-            final s = c.pomoRemaining % 60;
             final focus = c.pomoPhase == PomoPhase.focus;
             final color = focus ? const Color(0xFFE5534B) : const Color(0xFF4CAF50);
             return Positioned(
@@ -609,13 +610,20 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
                         offset: const Offset(0, 4)),
                   ],
                 ),
-                child: Text(
-                  '${focus ? '🍅' : '☕'} $m:${s.toString().padLeft(2, '0')}',
-                  style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF4A4A4A),
-                      decoration: TextDecoration.none),
+                child: ValueListenableBuilder<int>(
+                  valueListenable: c.pomoRemaining,
+                  builder: (context, remaining, _) {
+                    final m = remaining ~/ 60;
+                    final s = remaining % 60;
+                    return Text(
+                      '${focus ? '🍅' : '☕'} $m:${s.toString().padLeft(2, '0')}',
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF4A4A4A),
+                          decoration: TextDecoration.none),
+                    );
+                  },
                 ),
               ),
             );
@@ -697,7 +705,10 @@ class _PetVisual extends StatelessWidget {
           filterQuality: FilterQuality.medium,
           cacheWidth: (size * dpr).round(),
           gaplessPlayback: true,
-          errorBuilder: (_, e, s) => _svgFallback(),
+          // PNG 打包在 asset bundle 中，加载失败几乎不可能；保底用 emoji
+          errorBuilder: (_, e, s) => Center(
+            child: Text(animal.emoji, style: const TextStyle(fontSize: 70)),
+          ),
         ),
       );
     }
@@ -708,14 +719,6 @@ class _PetVisual extends StatelessWidget {
       child: visual,
     );
   }
-
-  Widget _svgFallback() => SvgPicture.asset(
-        'assets/animals/${animal.id}.svg',
-        fit: BoxFit.contain,
-        placeholderBuilder: (_) => Center(
-          child: Text(animal.emoji, style: const TextStyle(fontSize: 70)),
-        ),
-      );
 }
 
 class _Bubble extends StatelessWidget {
@@ -793,10 +796,6 @@ class _GrowthCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = animal.themeColor;
-    final days = DateTime.now().difference(growth.createdAt).inDays + 1;
-    final hours = growth.totalOnlineMinutes ~/ 60;
-    final mins = growth.totalOnlineMinutes % 60;
-    final progress = (growth.exp / growth.expToNext).clamp(0.0, 1.0);
     return Container(
       width: 220,
       decoration: BoxDecoration(
@@ -831,113 +830,83 @@ class _GrowthCard extends StatelessWidget {
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(20)),
             ),
-            child: Row(
-              children: [
-                Text(animal.emoji, style: const TextStyle(fontSize: 18)),
-                const SizedBox(width: 6),
-                Text(animal.name,
-                    style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                        color: Color.alphaBlend(
-                            Colors.black.withValues(alpha: 0.25), color),
-                        decoration: TextDecoration.none)),
-                const Spacer(),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [
-                      color,
-                      Color.lerp(color, Colors.white, 0.25)!,
-                    ]),
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                  child: Text('Lv.${growth.level}',
-                      style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          decoration: TextDecoration.none)),
-                ),
-              ],
-            ),
+            // 与设置页成长档案共用同一份 UI（widgets/growth_stats_panel.dart）
+            child: GrowthHeaderRow(animal: animal, level: growth.level),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _row(Fa7.star, '经验', '${growth.exp}/${growth.expToNext}',
-                    color),
-                const SizedBox(height: 2),
-                Stack(
-                  children: [
-                    Container(
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF0F0F3),
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                    ),
-                    FractionallySizedBox(
-                      widthFactor: progress <= 0 ? 0.001 : progress,
-                      child: Container(
-                        height: 8,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(colors: [
-                            color,
-                            Color.lerp(color, Colors.white, 0.35)!,
-                          ]),
-                          borderRadius: BorderRadius.circular(99),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                _row(Fa7.faceSmile, '心情',
-                    '${_moodEmoji(growth.mood)} ${growth.mood}/100', color),
-                _row(Fa7.handPointer, '互动次数', '${growth.totalInteractions}',
-                    color),
-                _row(Fa7.bone, '喂食次数', '${growth.totalFeedings}', color),
-                _row(Fa7.clock, '陪伴时长', '$hours小时$mins分钟', color),
-                _row(Fa7.calendarDays, '相识天数', '$days天', color),
-              ],
-            ),
+            child: GrowthStatsBody(
+                animal: animal, stats: growth.toSnapshot(), showFeedings: true),
           ),
+          // 相处时光轴：events 本来就在盘上（此前只写不读），
+          // 展示最近 5 条动态，强化陪伴感
+          if (growth.events.isNotEmpty) ...[
+            const Divider(height: 1, thickness: 0.5, color: Color(0xFFEEEEF2)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('最近动态',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFFAAAAAA),
+                          decoration: TextDecoration.none,
+                          fontWeight: FontWeight.normal)),
+                  const SizedBox(height: 4),
+                  for (final e in growth.events.reversed.take(5))
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 1.5),
+                      child: Row(
+                        children: [
+                          Text(_eventIcon(e.type),
+                              style: const TextStyle(fontSize: 11)),
+                          const SizedBox(width: 5),
+                          Expanded(
+                            child: Text(e.detail,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Color(0xFF5A5A5A),
+                                    decoration: TextDecoration.none,
+                                    fontWeight: FontWeight.normal)),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(_eventTime(e.time),
+                              style: const TextStyle(
+                                  fontSize: 10,
+                                  color: Color(0xFFBBBBBB),
+                                  decoration: TextDecoration.none,
+                                  fontWeight: FontWeight.normal)),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
-  String _moodEmoji(int mood) {
-    if (mood >= 80) return '😊';
-    if (mood >= 50) return '🙂';
-    return '😔';
-  }
+  static String _eventIcon(String type) => switch (type) {
+        'birth' => '🐣',
+        'levelUp' => '⭐',
+        'achievement' => '🏆',
+        'pomodoro' => '🍅',
+        'aiChat' => '💬',
+        _ => '·',
+      };
 
-  Widget _row(IconData icon, String k, String v, Color color) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2.5),
-        child: Row(
-          children: [
-            Icon(icon, size: 12, color: color.withValues(alpha: 0.55)),
-            const SizedBox(width: 6),
-            Text(k,
-                style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF8A8A8A),
-                    decoration: TextDecoration.none,
-                    fontWeight: FontWeight.normal)),
-            const Spacer(),
-            Text(v,
-                style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF3A3A3A),
-                    decoration: TextDecoration.none,
-                    fontWeight: FontWeight.w600)),
-          ],
-        ),
-      );
+  static String _eventTime(DateTime t) {
+    final now = DateTime.now();
+    if (t.year == now.year && t.month == now.month && t.day == now.day) {
+      return '${t.hour.toString().padLeft(2, '0')}:'
+          '${t.minute.toString().padLeft(2, '0')}';
+    }
+    return '${t.month}/${t.day}';
+  }
 }

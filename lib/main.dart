@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart' as acrylic;
@@ -20,8 +21,43 @@ import 'settings/settings_page.dart';
 
 late final AppConfig appConfig;
 
+/// 把未捕获异常追加写入 crash.log，滚动保留最近 3 份（crash.1.log / crash.2.log）。
+/// 24/7 常驻应用静默崩溃后，这是唯一的排障线索。
+void _logCrash(Object error, StackTrace stack) {
+  try {
+    final dir = AppPaths.root;
+    final log = File('${dir.path}\\crash.log');
+    if (log.existsSync() && log.lengthSync() > 256 * 1024) {
+      final older2 = File('${dir.path}\\crash.2.log');
+      if (older2.existsSync()) older2.deleteSync();
+      final older1 = File('${dir.path}\\crash.1.log');
+      if (older1.existsSync()) older1.renameSync(older2.path);
+      log.renameSync(older1.path);
+    }
+    log.writeAsStringSync(
+        '[${DateTime.now().toIso8601String()}] $error\n$stack\n\n',
+        mode: FileMode.append,
+        flush: true);
+  } catch (_) {
+    // 崩溃日志自身失败时静默，避免二次异常
+  }
+}
+
 Future<void> main() async {
+  // 故意不 await：应用主体在 zone 内常驻运行，异常由 _logCrash 兜底
+  unawaited(runZonedGuarded<Future<void>>(_run, (e, st) => _logCrash(e, st)));
+}
+
+Future<void> _run() async {
   WidgetsFlutterBinding.ensureInitialized();
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    _logCrash(details.exception, details.stack ?? StackTrace.current);
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    _logCrash(error, stack);
+    return true;
+  };
   await windowManager.ensureInitialized();
   await acrylic.Window.initialize();
 
@@ -48,10 +84,13 @@ Future<void> main() async {
     await windowManager.setResizable(false);
     await acrylic.Window.setEffect(effect: acrylic.WindowEffect.transparent);
     if (appConfig.windowX != null && appConfig.windowY != null) {
-      // 钳制到当前工作区内，无交集时回退右下角（防止拔副屏后宠物永久失踪）。
-      final area = WindowUtils.instance.workArea();
+      // 钳制到保存位置所在（或最近的）显示器工作区内，无交集时回退右下角
+      // （防止拔副屏后宠物永久失踪）。多屏下按窗口中心找最近的显示器。
       var x = appConfig.windowX!;
       var y = appConfig.windowY!;
+      final center = Offset(x + kPetWindowSize.width / 2,
+          y + kPetWindowSize.height / 2);
+      final area = WindowUtils.instance.workAreaForPoint(center);
       if (area != null) {
         // 窗口完全在工作区外时回退
         if (x + kPetWindowSize.width <= area.left ||
@@ -208,10 +247,12 @@ class _AppShellState extends State<AppShell>
   /// 贴边吸附：距屏幕工作区边缘 40px 内自动吸附，吸附后半透明（悬停恢复）。
   Future<void> _applyEdgeSnap() async {
     if (!appConfig.edgeSnap) return;
-    final area = WindowUtils.instance.workArea();
-    if (area == null) return;
     final pos = await windowManager.getPosition();
     final size = await windowManager.getSize();
+    // 多屏：按窗口中心找所在显示器的工作区（旧实现只取主屏，副屏上永不吸附）
+    final area = WindowUtils.instance.workAreaForPoint(
+        Offset(pos.dx + size.width / 2, pos.dy + size.height / 2));
+    if (area == null) return;
     const threshold = 40.0;
     var x = pos.dx;
     var y = pos.dy;
@@ -270,7 +311,8 @@ class _AppShellState extends State<AppShell>
   }
 
   Future<void> _exit() async {
-    growth.save();
+    growth.flush();
+    pet.daily.flush();
     pet.dispose();
     await trayManager.destroy();
     exit(0);

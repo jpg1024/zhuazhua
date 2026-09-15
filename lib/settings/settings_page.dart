@@ -8,10 +8,12 @@ import '../core/animals.dart';
 import '../core/config.dart';
 import '../core/fa_icons.dart';
 import '../core/keyboard_hook.dart';
+import '../core/url_safety.dart';
 import '../core/window_utils.dart';
 import '../growth/growth_service.dart';
 import '../pet/pet_controller.dart';
 import '../skin/skin_service.dart';
+import '../widgets/growth_stats_panel.dart';
 import 'play_sections.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -91,17 +93,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   /// AI 开启且 baseUrl 为非本地 http:// → API Key 将明文传输。
-  bool get _unsafeHttpAi => _aiEnabled && _isUnsafeHttpUrl(_baseUrl.text);
-
-  static bool _isUnsafeHttpUrl(String url) {
-    final u = Uri.tryParse(url.trim());
-    if (u == null || u.scheme != 'http') return false;
-    final host = u.host.toLowerCase();
-    return host != 'localhost' &&
-        host != '127.0.0.1' &&
-        host != '[::1]' &&
-        host != '::1';
-  }
+  bool get _unsafeHttpAi => _aiEnabled && isUnsafeHttpUrl(_baseUrl.text);
 
   Future<bool> _confirmUnsafeHttp() async {
     final proceed = await showDialog<bool>(
@@ -164,8 +156,9 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _restart() async {
     final saved = await _save();
     if (!saved) return;
-    // exit(0) 不会走 dispose，重启前手动落盘成长数据
-    widget.pet.growth.save();
+    // exit(0) 不会走 dispose，重启前强制落盘成长与任务数据（flush 绕过节流）
+    widget.pet.growth.flush();
+    widget.pet.daily.flush();
     try {
       await Process.start(Platform.resolvedExecutable, [], mode: ProcessStartMode.detached);
     } catch (e) {
@@ -239,12 +232,6 @@ class _SettingsPageState extends State<SettingsPage> {
         : a.totalOnlineMinutes.compareTo(b.totalOnlineMinutes));
   }
 
-  String _moodEmoji(int mood) {
-    if (mood >= 80) return '😊';
-    if (mood >= 50) return '🙂';
-    return '😔';
-  }
-
   /// 把分钟数格式化为"X 小时 / X.5 小时"显示
   String _fmtSleepHours(double minutes) {
     final h = minutes / 60;
@@ -267,10 +254,6 @@ class _SettingsPageState extends State<SettingsPage> {
     );
     final animal = animalById(selected.animalId);
     final color = animal.themeColor;
-    final days = DateTime.now().difference(selected.createdAt).inDays + 1;
-    final hours = selected.totalOnlineMinutes ~/ 60;
-    final mins = selected.totalOnlineMinutes % 60;
-    final progress = (selected.exp / selected.expToNext).clamp(0.0, 1.0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -304,97 +287,12 @@ class _SettingsPageState extends State<SettingsPage> {
             color: color.withValues(alpha: 0.06),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Text(animal.emoji, style: const TextStyle(fontSize: 18)),
-                  const SizedBox(width: 6),
-                  Text(animal.name,
-                      style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: Color.alphaBlend(
-                              Colors.black.withValues(alpha: 0.25), color))),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 3),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(colors: [
-                        color,
-                        Color.lerp(color, Colors.white, 0.25)!,
-                      ]),
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                    child: Text('Lv.${selected.level}',
-                        style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              _growthRow(Fa7.star, '经验',
-                  '${selected.exp}/${selected.expToNext}', color),
-              const SizedBox(height: 2),
-              Stack(
-                children: [
-                  Container(
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF0F0F3),
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                  ),
-                  FractionallySizedBox(
-                    widthFactor: progress <= 0 ? 0.001 : progress,
-                    child: Container(
-                      height: 8,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(colors: [
-                          color,
-                          Color.lerp(color, Colors.white, 0.35)!,
-                        ]),
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              _growthRow(Fa7.faceSmile, '心情',
-                  '${_moodEmoji(selected.mood)} ${selected.mood}/100', color),
-              _growthRow(Fa7.handPointer, '互动次数',
-                  '${selected.totalInteractions}', color),
-              _growthRow(Fa7.clock, '陪伴时长', '$hours小时$mins分钟', color),
-              _growthRow(Fa7.calendarDays, '相识天数', '$days天', color),
-            ],
-          ),
+          // 与宠物浮层卡片共用同一份成长统计 UI（widgets/growth_stats_panel.dart）
+          child: GrowthStatsPanel(animal: animal, stats: selected),
         ),
       ],
     );
   }
-
-  Widget _growthRow(IconData icon, String k, String v, Color color) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2.5),
-        child: Row(
-          children: [
-            Icon(icon, size: 12, color: color.withValues(alpha: 0.55)),
-            const SizedBox(width: 6),
-            Text(k,
-                style: const TextStyle(fontSize: 12, color: Color(0xFF8A8A8A))),
-            const Spacer(),
-            Text(v,
-                style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF3A3A3A),
-                    fontWeight: FontWeight.w600)),
-          ],
-        ),
-      );
 
   Widget _buildSkinSection() {
     final skin = cfg.skinOf(_animalId);

@@ -46,9 +46,20 @@ class PetController extends ChangeNotifier {
   Timer? _stateResetTimer;
   DateTime _lastInteraction = DateTime.now();
   int _lastSeenOnline = 0;
+  bool _aiInFlight = false;
+
+  /// 启动时加载的其他动物成长快照（仅加载一次）。
+  /// 非活跃动物的数据在运行期不会变化，用于跨动物成就聚合；
+  /// 排除当前动物（它的数据用内存中的实时 growth 实例）。
+  late final List<GrowthSnapshot> _otherSnapshots = GrowthSnapshot.loadAll()
+      .where((s) => s.animalId != animal.id)
+      .toList();
 
   PomoPhase pomoPhase = PomoPhase.none;
-  int pomoRemaining = 0;
+
+  /// 番茄钟剩余秒数。独立 ValueNotifier：每秒跳变只通知倒计时 chip，
+  /// 不再每秒触发整个 ChangeNotifier（避免 5 处 ListenableBuilder 子树每秒重建）。
+  final ValueNotifier<int> pomoRemaining = ValueNotifier(0);
   static const int pomoFocusSeconds = 25 * 60;
   static const int pomoBreakSeconds = 5 * 60;
 
@@ -113,10 +124,10 @@ class PetController extends ChangeNotifier {
   }
 
   void _checkAchievements() {
-    // 使用内存中的 growth 实例（非活跃动物启动时已加载一次），
-    // 避免每分钟在 UI 线程上读遍全部 JSON 文件。
+    // 跨动物聚合：非活跃动物的快照启动时加载一次（它们运行期不会变），
+    // 当前动物用内存中的实时数据，避免每分钟在 UI 线程读遍全部 JSON 文件。
     final stats = AchievementsService.aggregate(
-        [growth.toSnapshot()], achievements.pomodoros);
+        [..._otherSnapshots, growth.toSnapshot()], achievements.pomodoros);
     final newly = achievements.checkAll(stats);
     for (final a in newly) {
       showBubble('🏆 解锁成就「${a.name}」！', seconds: 6);
@@ -302,7 +313,7 @@ class PetController extends ChangeNotifier {
 
   void _startPomodoro() {
     pomoPhase = PomoPhase.focus;
-    pomoRemaining = pomoFocusSeconds;
+    pomoRemaining.value = pomoFocusSeconds;
     showBubble('开始专注！🍅 25 分钟后叫你休息', seconds: 5);
     _pomoTimer?.cancel();
     _pomoTimer = Timer.periodic(const Duration(seconds: 1), (_) => _pomoTick());
@@ -311,7 +322,7 @@ class PetController extends ChangeNotifier {
 
   void _stopPomodoro() {
     pomoPhase = PomoPhase.none;
-    pomoRemaining = 0;
+    pomoRemaining.value = 0;
     _pomoTimer?.cancel();
     _pomoTimer = null;
     showBubble('番茄钟已停止，休息一下吧～', seconds: 5);
@@ -319,14 +330,13 @@ class PetController extends ChangeNotifier {
   }
 
   void _pomoTick() {
-    pomoRemaining--;
-    if (pomoRemaining > 0) {
-      notifyListeners();
-      return;
+    pomoRemaining.value--;
+    if (pomoRemaining.value > 0) {
+      return; // 每秒跳变只走 ValueNotifier，不通知整个 ChangeNotifier
     }
     if (pomoPhase == PomoPhase.focus) {
       pomoPhase = PomoPhase.breakTime;
-      pomoRemaining = pomoBreakSeconds;
+      pomoRemaining.value = pomoBreakSeconds;
       showBubble('专注结束！休息 5 分钟吧 ☕', seconds: 6);
       growth.addEvent('pomodoro', '完成一个专注时段');
       growth.save();
@@ -446,12 +456,18 @@ class PetController extends ChangeNotifier {
       return;
     }
 
-    if (ai.ready && _rand.nextDouble() < 0.3) {
+    if (ai.ready && !_aiInFlight && _rand.nextDouble() < 0.3) {
       showBubble(_phrases[_rand.nextInt(_phrases.length)]);
-      final text = await ai.chat(_systemPrompt(), '主人刚刚摸了摸你，回应一句话。');
-      if (text != null) {
-        showBubble(text, seconds: 6);
-        growth.addEvent('aiChat', text);
+      // 并发去重：AI 请求在途时不再发起新的，避免后返回的覆盖先返回的气泡
+      _aiInFlight = true;
+      try {
+        final text = await ai.chat(_systemPrompt(), '主人刚刚摸了摸你，回应一句话。');
+        if (text != null) {
+          showBubble(text, seconds: 6);
+          growth.addEvent('aiChat', text);
+        }
+      } finally {
+        _aiInFlight = false;
       }
     } else {
       showBubble(_phrases[_rand.nextInt(_phrases.length)]);
@@ -529,6 +545,7 @@ class PetController extends ChangeNotifier {
     _greetTimer?.cancel();
     _pomoTimer?.cancel();
     _stateResetTimer?.cancel();
+    pomoRemaining.dispose();
     KeyboardHookService.instance.dispose();
     super.dispose();
   }

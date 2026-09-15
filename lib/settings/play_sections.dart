@@ -59,18 +59,7 @@ class _PomodoroCard extends StatelessWidget {
         listenable: pet,
         builder: (context, _) {
           final running = pet.pomoRunning;
-          final String status;
-          if (!running) {
-            status = '未开始';
-          } else if (pet.pomoPhase == PomoPhase.focus) {
-            final m = pet.pomoRemaining ~/ 60;
-            final s = pet.pomoRemaining % 60;
-            status = '🍅 专注中 $m:${s.toString().padLeft(2, '0')}';
-          } else {
-            final m = pet.pomoRemaining ~/ 60;
-            final s = pet.pomoRemaining % 60;
-            status = '☕ 休息中 $m:${s.toString().padLeft(2, '0')}';
-          }
+          final focus = pet.pomoPhase == PomoPhase.focus;
           return Row(
             children: [
               Expanded(
@@ -81,12 +70,23 @@ class _PomodoroCard extends StatelessWidget {
                         style: TextStyle(
                             fontSize: 12.5, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 3),
-                    Text(
-                        running
-                            ? status
-                            : '完成后宠物奖励经验，还会累计成就与每日任务进度。',
-                        style: const TextStyle(
-                            fontSize: 11.5, color: Colors.black54)),
+                    // 秒数跳变只听 pomoRemaining（controller 不再每秒广播）
+                    ValueListenableBuilder<int>(
+                      valueListenable: pet.pomoRemaining,
+                      builder: (context, remaining, _) {
+                        final m = remaining ~/ 60;
+                        final s = remaining % 60;
+                        final status = focus
+                            ? '🍅 专注中 $m:${s.toString().padLeft(2, '0')}'
+                            : '☕ 休息中 $m:${s.toString().padLeft(2, '0')}';
+                        return Text(
+                            running
+                                ? status
+                                : '完成后宠物奖励经验，还会累计成就与每日任务进度。',
+                            style: const TextStyle(
+                                fontSize: 11.5, color: Colors.black54));
+                      },
+                    ),
                   ],
                 ),
               ),
