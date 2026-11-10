@@ -391,11 +391,18 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
         ListenableBuilder(
           listenable: c,
           builder: (context, _) {
+            final bottom = math.min<double>(
+                8 + 96 * c.petScale + 10, c.showGrowthCard ? 140 : 270);
+            final growthCardMaxHeight = math.max(
+                0.0, MediaQuery.sizeOf(context).height - bottom - 8);
             final Widget topSlot = c.showGrowthCard
                 ? Padding(
                     key: const ValueKey('card'),
                     padding: const EdgeInsets.symmetric(horizontal: 14),
-                    child: _GrowthCard(growth: c.growth, animal: animal))
+                    child: GrowthCard(
+                        growth: c.growth,
+                        animal: animal,
+                        maxHeight: growthCardMaxHeight))
                 : (c.bubbleText != null
                     ? Padding(
                         key: ValueKey(c.bubbleText),
@@ -405,8 +412,7 @@ class _PetPageState extends State<PetPage> with TickerProviderStateMixin {
                     : const SizedBox.shrink(key: ValueKey('empty')));
             return Positioned(
               // 紧贴动物头顶显示（动物 bottom:8，高约 96*scale）；上限防止超出窗口
-              bottom: math.min(
-                  8 + 96 * c.petScale + 10, c.showGrowthCard ? 140 : 270),
+              bottom: bottom,
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 280),
                 switchInCurve: Curves.easeOutBack,
@@ -787,17 +793,24 @@ class _Bubble extends StatelessWidget {
   }
 }
 
-class _GrowthCard extends StatelessWidget {
+class GrowthCard extends StatelessWidget {
   final GrowthService growth;
   final AnimalInfo animal;
+  final double maxHeight;
 
-  const _GrowthCard({required this.growth, required this.animal});
+  const GrowthCard({
+    super.key,
+    required this.growth,
+    required this.animal,
+    required this.maxHeight,
+  });
 
   @override
   Widget build(BuildContext context) {
     final color = animal.themeColor;
     return Container(
       width: 220,
+      constraints: BoxConstraints(maxHeight: maxHeight),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -812,82 +825,90 @@ class _GrowthCard extends StatelessWidget {
               offset: const Offset(0, 3)),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  color.withValues(alpha: 0.18),
-                  color.withValues(alpha: 0.04),
-                ],
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      color.withValues(alpha: 0.18),
+                      color.withValues(alpha: 0.04),
+                    ],
+                  ),
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                // 与设置页成长档案共用同一份 UI（widgets/growth_stats_panel.dart）
+                child: GrowthHeaderRow(animal: animal, level: growth.level),
               ),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            // 与设置页成长档案共用同一份 UI（widgets/growth_stats_panel.dart）
-            child: GrowthHeaderRow(animal: animal, level: growth.level),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
-            child: GrowthStatsBody(
-                animal: animal, stats: growth.toSnapshot(), showFeedings: true),
-          ),
-          // 相处时光轴：events 本来就在盘上（此前只写不读），
-          // 展示最近 5 条动态，强化陪伴感
-          if (growth.events.isNotEmpty) ...[
-            const Divider(height: 1, thickness: 0.5, color: Color(0xFFEEEEF2)),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('最近动态',
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: Color(0xFFAAAAAA),
-                          decoration: TextDecoration.none,
-                          fontWeight: FontWeight.normal)),
-                  const SizedBox(height: 4),
-                  for (final e in growth.events.reversed.take(5))
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 1.5),
-                      child: Row(
-                        children: [
-                          Text(_eventIcon(e.type),
-                              style: const TextStyle(fontSize: 11)),
-                          const SizedBox(width: 5),
-                          Expanded(
-                            child: Text(e.detail,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    fontSize: 11,
-                                    color: Color(0xFF5A5A5A),
-                                    decoration: TextDecoration.none,
-                                    fontWeight: FontWeight.normal)),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+                child: GrowthStatsBody(
+                    animal: animal,
+                    stats: growth.toSnapshot(),
+                    showFeedings: true),
+              ),
+              // 相处时光轴：events 本来就在盘上（此前只写不读），
+              // 展示最近 5 条动态，强化陪伴感
+              if (growth.events.isNotEmpty) ...[
+                const Divider(
+                    height: 1, thickness: 0.5, color: Color(0xFFEEEEF2)),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('最近动态',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFFAAAAAA),
+                              decoration: TextDecoration.none,
+                              fontWeight: FontWeight.normal)),
+                      const SizedBox(height: 4),
+                      for (final e in growth.events.reversed.take(5))
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 1.5),
+                          child: Row(
+                            children: [
+                              Text(_eventIcon(e.type),
+                                  style: const TextStyle(fontSize: 11)),
+                              const SizedBox(width: 5),
+                              Expanded(
+                                child: Text(e.detail,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Color(0xFF5A5A5A),
+                                        decoration: TextDecoration.none,
+                                        fontWeight: FontWeight.normal)),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(_eventTime(e.time),
+                                  style: const TextStyle(
+                                      fontSize: 10,
+                                      color: Color(0xFFBBBBBB),
+                                      decoration: TextDecoration.none,
+                                      fontWeight: FontWeight.normal)),
+                            ],
                           ),
-                          const SizedBox(width: 4),
-                          Text(_eventTime(e.time),
-                              style: const TextStyle(
-                                  fontSize: 10,
-                                  color: Color(0xFFBBBBBB),
-                                  decoration: TextDecoration.none,
-                                  fontWeight: FontWeight.normal)),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ],
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
